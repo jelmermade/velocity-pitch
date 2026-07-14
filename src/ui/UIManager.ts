@@ -1,4 +1,5 @@
 import type { SimulationSnapshot } from '../gameplay/simulation/SimulationSnapshot';
+import type { Vec3 } from '../core/math/Vector3';
 import type { SettingsHandlers } from './menus/SettingsMenu';
 import { SettingsMenu } from './menus/SettingsMenu';
 import { PauseMenu } from './menus/PauseMenu';
@@ -15,6 +16,8 @@ export class UIManager {
   private readonly announcement: HTMLElement;
   private readonly cameraMode: HTMLElement;
   private readonly fpsCounter: HTMLElement;
+  private readonly fpsValue: HTMLElement;
+  private readonly carPosition: HTMLElement;
   private readonly pauseMenu: PauseMenu;
   private readonly settingsMenu: SettingsMenu;
   private fpsVisible = false;
@@ -45,7 +48,10 @@ export class UIManager {
           <section class="announcement" data-announcement></section>
           <div class="countdown" data-countdown></div>
           <aside class="camera-tag">CAM <b data-camera-mode>BALL</b></aside>
-          <aside class="fps-counter" data-fps-counter hidden>FPS <b>60</b></aside>
+          <aside class="fps-counter" data-fps-counter hidden>
+            <span>FPS <b data-fps-value>60</b></span>
+            <span>POS <b data-car-position>X 0.00 Y 0.00 Z 0.00</b></span>
+          </aside>
           <aside class="controls-hint">
             <span><b>WASD</b> DRIVE / AIR</span><span><b>RMB</b> JUMP + FLIP</span>
             <span><b>LMB</b> BOOST</span><span><b>SHIFT</b> SLIDE</span>
@@ -91,6 +97,8 @@ export class UIManager {
     this.announcement = this.require('[data-announcement]');
     this.cameraMode = this.require('[data-camera-mode]');
     this.fpsCounter = this.require('[data-fps-counter]');
+    this.fpsValue = this.require('[data-fps-value]');
+    this.carPosition = this.require('[data-car-position]');
     this.pauseMenu = new PauseMenu(root, actions);
     this.settingsMenu = new SettingsMenu(root, {
       ...settings,
@@ -103,15 +111,15 @@ export class UIManager {
 
   toggleFpsCounter(): void { this.setFpsVisible(!this.fpsVisible); }
 
-  updateFrameRate(deltaSeconds: number): void {
+  updateFrameRate(deltaSeconds: number, position: Vec3): void {
     if (!this.fpsVisible || deltaSeconds <= 0) return;
     const blend = 1 - Math.exp(-deltaSeconds * 5);
     this.smoothedFrameSeconds += (deltaSeconds - this.smoothedFrameSeconds) * blend;
     this.fpsRefreshElapsed += deltaSeconds;
     if (this.fpsRefreshElapsed < 0.25) return;
     this.fpsRefreshElapsed = 0;
-    const value = this.fpsCounter.querySelector('b');
-    if (value) value.textContent = Math.round(1 / this.smoothedFrameSeconds).toString();
+    this.fpsValue.textContent = Math.round(1 / this.smoothedFrameSeconds).toString();
+    this.carPosition.textContent = formatCarPosition(position);
   }
 
   update(snapshot: SimulationSnapshot, cameraMode: string): void {
@@ -180,3 +188,11 @@ export class UIManager {
     return `${winner} WINS // ${goals} ${goals === 1 ? 'GOAL' : 'GOALS'}`;
   }
 }
+
+export const formatCarPosition = ({ x, y, z }: Vec3): string => (
+  `X ${formatCoordinate(x)} Y ${formatCoordinate(y)} Z ${formatCoordinate(z)}`
+);
+
+const formatCoordinate = (value: number): string => (
+  (Math.abs(value) < 0.005 ? 0 : value).toFixed(2)
+);

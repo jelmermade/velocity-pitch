@@ -169,7 +169,7 @@ export class GameApplication {
         renderer.update(snapshot, renderedCars, deltaSeconds);
         camera.update(snapshot, deltaSeconds);
         ui.update(snapshot, camera.modeName());
-        ui.updateFrameRate(deltaSeconds);
+        ui.updateFrameRate(deltaSeconds, snapshot.car.transform.position);
         renderer.render(deltaSeconds);
       },
     );

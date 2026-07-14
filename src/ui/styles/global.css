@@ -53,7 +53,7 @@ canvas { display: block; width: 100%; height: 100%; }
 .announcement { position: absolute; top: 22%; width: 100%; text-align: center; font: 1.6rem 'Russo One', sans-serif; letter-spacing: 0.15em; color: var(--acid); text-shadow: 0 0 20px rgba(184, 255, 102, 0.8); }
 .camera-tag { position: absolute; top: 1.3rem; left: 1.5rem; color: #68868d; font-size: 0.72rem; letter-spacing: 0.18em; }
 .camera-tag b { color: var(--acid); }
-.fps-counter { position: absolute; top: 2.65rem; left: 1.5rem; color: #68868d; font-size: 0.72rem; letter-spacing: 0.18em; }
+.fps-counter { position: absolute; top: 2.65rem; left: 1.5rem; display: flex; gap: 1.1rem; color: #68868d; font-size: 0.72rem; letter-spacing: 0.18em; }
 .fps-counter b { color: var(--azure); font-family: 'Russo One', sans-serif; }
 
 .boost-gauge { position: absolute; right: 2rem; bottom: 1.8rem; width: 11rem; text-align: right; transform: skewX(-5deg); }
