@@ -1,32 +1,28 @@
 import type { PlayerCommand } from '../input/PlayerCommand';
 import { NEUTRAL_COMMAND } from '../input/PlayerCommand';
-import { BotController, type BotRole } from '../gameplay/bots/BotController';
+import { BotController } from '../gameplay/bots/BotController';
+import { botRole, fillBotSlots } from '../gameplay/bots/BotRoster';
+import type { TeamSize } from '../gameplay/match/MatchSettings';
 import type { GameSession } from './GameSession';
 import type { AuthoritativeFrame, LobbyPlayer } from './LobbyProtocol';
-
-const SINGLE_PLAYER_ROSTER: readonly LobbyPlayer[] = Object.freeze([
-  { id: 'local', name: 'Driver', team: 'azure', host: true },
-  { id: 'bot-ember', name: 'Ember [BOT]', team: 'coral', host: false },
-  { id: 'bot-atlas', name: 'Atlas [BOT]', team: 'azure', host: false },
-  { id: 'bot-vex', name: 'Vex [BOT]', team: 'coral', host: false },
-]);
-
-const BOT_ROLES: Readonly<Record<string, BotRole>> = Object.freeze({
-  'bot-ember': 'striker',
-  'bot-atlas': 'striker',
-  'bot-vex': 'defender',
-});
 
 export class LocalSession implements GameSession {
   readonly localPlayerId = 'local';
   readonly authoritative = true;
-  readonly players = SINGLE_PLAYER_ROSTER;
-  private readonly bots = new Map(this.players
-    .filter(({ id }) => id !== this.localPlayerId)
-    .map((player) => [
-      player.id,
-      new BotController(player.id, player.team, BOT_ROLES[player.id] ?? 'striker'),
-    ]));
+  readonly players: readonly LobbyPlayer[];
+  private readonly bots: ReadonlyMap<string, BotController>;
+
+  constructor(teamSize: TeamSize = 2) {
+    this.players = fillBotSlots([
+      { id: this.localPlayerId, name: 'Driver', team: 'azure', host: true },
+    ], teamSize);
+    this.bots = new Map(this.players
+      .filter((player) => player.bot)
+      .map((player) => [
+        player.id,
+        new BotController(player.id, player.team, botRole(player)),
+      ]));
+  }
 
   commandsForTick(
     tick: number,

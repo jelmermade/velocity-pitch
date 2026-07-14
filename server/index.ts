@@ -9,15 +9,15 @@ import type {
   TeamId,
 } from '../src/networking/LobbyProtocol';
 import { sanitizeMatchSettings, type MatchSettings } from '../src/gameplay/match/MatchSettings';
+import { fillBotSlots } from '../src/gameplay/bots/BotRoster';
 
 const port = Number(process.env.MULTIPLAYER_PORT ?? 8787);
 const host = process.env.MULTIPLAYER_HOST ?? '0.0.0.0';
-const maximumPlayers = Number(process.env.MULTIPLAYER_MAX_PLAYERS ?? 4);
-
 interface ClientConnection {
   readonly socket: WebSocket;
   readonly playerId: string;
   lobbyId: string | null;
+  lastChatAt: number;
 }
 
 interface Lobby {
@@ -36,7 +36,7 @@ const lobbies = new Map<string, Lobby>();
 const connections = new Map<WebSocket, ClientConnection>();
 
 server.on('connection', (socket) => {
-  const connection: ClientConnection = { socket, playerId: randomUUID(), lobbyId: null };
+  const connection: ClientConnection = { socket, playerId: randomUUID(), lobbyId: null, lastChatAt: 0 };
   connections.set(socket, connection);
   socket.on('message', (payload) => handleMessage(connection, parseMessage(decodePayload(payload))));
   socket.on('close', () => disconnect(connection));
@@ -74,7 +74,7 @@ const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage
     lobby.started = true;
     broadcast(lobby, {
       type: 'matchStarted',
-      players: [...lobby.players.values()],
+      players: rosterFor(lobby),
       hostId: lobby.hostId,
       settings: lobby.settings,
     });
@@ -85,8 +85,15 @@ const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage
     const player = lobby.players.get(message.playerId);
     const requestedTeam: unknown = message.team;
     if (!player || !isTeamId(requestedTeam)) return;
+    const requestedTeamCount = [...lobby.players.values()].filter(({ id, team }) => (
+      id !== player.id && team === requestedTeam
+    )).length;
+    if (requestedTeamCount >= lobby.settings.teamSize) {
+      send(connection.socket, { type: 'error', message: `${requestedTeam.toUpperCase()} is full` });
+      return;
+    }
     lobby.players.set(player.id, { ...player, team: requestedTeam });
-    broadcast(lobby, { type: 'roster', players: [...lobby.players.values()] });
+    broadcast(lobby, { type: 'roster', players: rosterFor(lobby) });
     return;
   }
   if (message.type === 'kickPlayer') {
@@ -97,7 +104,7 @@ const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage
     lobby.players.delete(message.playerId);
     kicked.lobbyId = null;
     send(kicked.socket, { type: 'removedFromLobby', reason: 'You were kicked by the host' });
-    broadcast(lobby, { type: 'roster', players: [...lobby.players.values()] });
+    broadcast(lobby, { type: 'roster', players: rosterFor(lobby) });
     return;
   }
   if (message.type === 'matchControl') {
@@ -112,15 +119,46 @@ const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage
     lobby.started = false;
     broadcast(lobby, {
       type: 'returnedToLobby',
-      players: [...lobby.players.values()],
+      players: rosterFor(lobby),
       settings: lobby.settings,
     });
     return;
   }
   if (message.type === 'updateMatchSettings') {
     if (connection.playerId !== lobby.hostId || lobby.started) return;
-    lobby.settings = sanitizeMatchSettings(message.settings);
+    const settings = sanitizeMatchSettings(message.settings);
+    const overfilledTeam = (['azure', 'coral'] as const).find((team) => (
+      [...lobby.players.values()].filter((player) => player.team === team).length > settings.teamSize
+    ));
+    if (overfilledTeam) {
+      send(connection.socket, {
+        type: 'error',
+        message: `Move drivers out of ${overfilledTeam.toUpperCase()} before reducing team size`,
+      });
+      send(connection.socket, { type: 'matchSettings', settings: lobby.settings });
+      return;
+    }
+    lobby.settings = settings;
     broadcast(lobby, { type: 'matchSettings', settings: lobby.settings });
+    broadcast(lobby, { type: 'roster', players: rosterFor(lobby) });
+    return;
+  }
+  if (message.type === 'chat') {
+    const player = lobby.players.get(connection.playerId);
+    const text = sanitizeChatMessage(message.text);
+    const now = Date.now();
+    if (!player || !text || now - connection.lastChatAt < 500) return;
+    connection.lastChatAt = now;
+    broadcast(lobby, {
+      type: 'chat',
+      message: {
+        playerId: player.id,
+        playerName: player.name,
+        team: player.team,
+        text,
+        sentAt: now,
+      },
+    });
     return;
   }
   if (message.type === 'input') {
@@ -170,7 +208,7 @@ const createLobby = (
     lobbyId,
     lobbyName: lobby.name,
     playerId: connection.playerId,
-    players: [player],
+    players: rosterFor(lobby),
     settings: lobby.settings,
   });
 };
@@ -196,11 +234,11 @@ const joinLobby = (
     send(connection.socket, { type: 'error', message: 'Incorrect lobby password' });
     return;
   }
-  if (lobby.players.size >= maximumPlayers) {
+  if (lobby.players.size >= lobby.settings.teamSize * 2) {
     send(connection.socket, { type: 'error', message: 'This lobby is full' });
     return;
   }
-  const team = lobby.players.size % 2 === 0 ? 'azure' : 'coral';
+  const team = nextAvailableTeam(lobby);
   const player = createPlayer(connection.playerId, playerName, team, false);
   connection.lobbyId = lobbyId;
   lobby.clients.set(connection.playerId, connection);
@@ -210,10 +248,10 @@ const joinLobby = (
     lobbyId,
     lobbyName: lobby.name,
     playerId: connection.playerId,
-    players: [...lobby.players.values()],
+    players: rosterFor(lobby),
     settings: lobby.settings,
   });
-  broadcast(lobby, { type: 'roster', players: [...lobby.players.values()] });
+  broadcast(lobby, { type: 'roster', players: rosterFor(lobby) });
 };
 
 const disconnect = (connection: ClientConnection): void => {
@@ -232,7 +270,7 @@ const disconnect = (connection: ClientConnection): void => {
     lobbies.delete(lobby.id);
     return;
   }
-  broadcast(lobby, { type: 'roster', players: [...lobby.players.values()] });
+  broadcast(lobby, { type: 'roster', players: rosterFor(lobby) });
 };
 
 const createPlayer = (id: string, rawName: string, team: LobbyPlayer['team'], isHost: boolean): LobbyPlayer => ({
@@ -244,20 +282,43 @@ const createPlayer = (id: string, rawName: string, team: LobbyPlayer['team'], is
 
 const createLobbyId = (): string => randomBytes(3).toString('hex').toUpperCase();
 
+const rosterFor = (lobby: Lobby): readonly LobbyPlayer[] => (
+  fillBotSlots([...lobby.players.values()], lobby.settings.teamSize)
+);
+
+const nextAvailableTeam = (lobby: Lobby): TeamId => {
+  const counts = { azure: 0, coral: 0 };
+  lobby.players.forEach(({ team }) => { counts[team] += 1; });
+  if (counts.azure >= lobby.settings.teamSize) return 'coral';
+  if (counts.coral >= lobby.settings.teamSize) return 'azure';
+  return counts.azure <= counts.coral ? 'azure' : 'coral';
+};
+
 const publicLobbyList = (): readonly LobbySummary[] => [...lobbies.values()]
-  .filter((lobby) => !lobby.started && lobby.players.size < maximumPlayers)
+  .filter((lobby) => !lobby.started && lobby.players.size < lobby.settings.teamSize * 2)
   .map((lobby) => ({
     id: lobby.id,
     name: lobby.name,
     hostName: lobby.players.get(lobby.hostId)?.name ?? 'Driver',
     playerCount: lobby.players.size,
-    maximumPlayers,
+    maximumPlayers: lobby.settings.teamSize * 2,
+    teamSize: lobby.settings.teamSize,
     passwordProtected: lobby.passwordHash !== null,
   }));
 
 const normalizePassword = (password: unknown): string => (
   typeof password === 'string' ? password.trim().slice(0, 64) : ''
 );
+
+const sanitizeChatMessage = (value: unknown): string => {
+  if (typeof value !== 'string') return '';
+  let sanitized = '';
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    sanitized += code < 32 || code === 127 ? ' ' : character;
+  }
+  return sanitized.replace(/\s+/g, ' ').trim().slice(0, 160);
+};
 
 const sanitizeLobbyName = (value: unknown, hostName: string): string => {
   if (typeof value !== 'string') return `${hostName}'s Lobby`;

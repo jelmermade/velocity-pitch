@@ -60,7 +60,21 @@ describe('InputManager controls', () => {
     dispatchKeyboard(target, 'keyup', 'Tab');
     expect(input.isDown('Tab')).toBe(false);
   });
+
+  it('ignores keyboard and mouse input from interactive chat controls', () => {
+    const interactiveTarget = new InteractiveEventTarget();
+    const interactiveInput = new InputManager(interactiveTarget as unknown as Window);
+    dispatchKeyboard(interactiveTarget, 'keydown', 'KeyW');
+    dispatchMouse(interactiveTarget, 'mousedown', 0);
+
+    expect(interactiveInput.sample()).toMatchObject({ throttle: 0, boost: false });
+    interactiveInput.dispose();
+  });
 });
+
+class InteractiveEventTarget extends EventTarget {
+  closest(): this { return this; }
+}
 
 const dispatch = (target: EventTarget, type: string): void => {
   target.dispatchEvent(new Event(type));

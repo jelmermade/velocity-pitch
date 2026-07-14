@@ -1,16 +1,21 @@
 export interface MatchSettings {
+  readonly teamSize: TeamSize;
   readonly boostRechargePerSecond: number;
   readonly boostPowerMultiplier: number;
   readonly hitPowerMultiplier: number;
 }
 
+export type TeamSize = 1 | 2 | 3;
+
 export const DEFAULT_MATCH_SETTINGS: MatchSettings = Object.freeze({
+  teamSize: 2,
   boostRechargePerSecond: 5,
   boostPowerMultiplier: 1,
   hitPowerMultiplier: 1,
 });
 
 export const MATCH_SETTING_LIMITS = Object.freeze({
+  teamSize: Object.freeze({ minimum: 1, maximum: 3, step: 1 }),
   boostRechargePerSecond: Object.freeze({ minimum: 0, maximum: 30, step: 1 }),
   boostPowerMultiplier: Object.freeze({ minimum: 1, maximum: 3, step: 0.1 }),
   hitPowerMultiplier: Object.freeze({ minimum: 1, maximum: 3, step: 0.1 }),
@@ -19,6 +24,11 @@ export const MATCH_SETTING_LIMITS = Object.freeze({
 export const sanitizeMatchSettings = (value: unknown): MatchSettings => {
   const settings = value && typeof value === 'object' ? value as Partial<MatchSettings> : {};
   return {
+    teamSize: sanitize(
+      settings.teamSize,
+      MATCH_SETTING_LIMITS.teamSize,
+      DEFAULT_MATCH_SETTINGS.teamSize,
+    ) as TeamSize,
     boostRechargePerSecond: sanitize(
       settings.boostRechargePerSecond,
       MATCH_SETTING_LIMITS.boostRechargePerSecond,

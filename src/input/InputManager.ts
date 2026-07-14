@@ -14,6 +14,7 @@ export class InputManager {
     target.addEventListener('mouseup', this.onMouseUp);
     target.addEventListener('contextmenu', this.onContextMenu);
     target.addEventListener('blur', this.onBlur);
+    target.addEventListener('focusin', this.onFocusIn);
   }
 
   sample(): PlayerCommand {
@@ -46,6 +47,7 @@ export class InputManager {
     this.target.removeEventListener('mouseup', this.onMouseUp);
     this.target.removeEventListener('contextmenu', this.onContextMenu);
     this.target.removeEventListener('blur', this.onBlur);
+    this.target.removeEventListener('focusin', this.onFocusIn);
   }
 
   private wasPressed(code: string): boolean {
@@ -61,6 +63,7 @@ export class InputManager {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (isInteractive(event.target)) return;
     if (!this.held.has(event.code)) this.pressed.add(event.code);
     this.held.add(event.code);
     if (['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
@@ -71,6 +74,7 @@ export class InputManager {
   };
 
   private readonly onMouseDown = (event: MouseEvent): void => {
+    if (isInteractive(event.target)) return;
     if (!this.heldMouseButtons.has(event.button)) this.pressedMouseButtons.add(event.button);
     this.heldMouseButtons.add(event.button);
     if (event.button === BINDINGS.jumpMouseButton) event.preventDefault();
@@ -90,4 +94,13 @@ export class InputManager {
     this.heldMouseButtons.clear();
     this.pressedMouseButtons.clear();
   };
+
+  private readonly onFocusIn = (event: FocusEvent): void => {
+    if (isInteractive(event.target)) this.onBlur();
+  };
 }
+
+const isInteractive = (target: EventTarget | null): boolean => {
+  const element = target as { closest?: (selector: string) => Element | null } | null;
+  return Boolean(element?.closest?.('input, textarea, select, button, [contenteditable="true"]'));
+};

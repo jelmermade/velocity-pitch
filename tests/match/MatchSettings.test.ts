@@ -8,10 +8,12 @@ import {
 describe('match settings', () => {
   it('sanitizes host-provided values to supported slider ranges', () => {
     expect(sanitizeMatchSettings({
+      teamSize: 9,
       boostRechargePerSecond: 999,
       boostPowerMultiplier: 1.26,
       hitPowerMultiplier: -4,
     })).toEqual({
+      teamSize: 3,
       boostRechargePerSecond: 30,
       boostPowerMultiplier: 1.3,
       hitPowerMultiplier: 1,
@@ -24,6 +26,7 @@ describe('match settings', () => {
 
   it('maps match sliders to car recharge and thrust tuning', () => {
     const tuning = carTuningForMatch({
+      teamSize: 2,
       boostRechargePerSecond: 18,
       boostPowerMultiplier: 2.5,
       hitPowerMultiplier: 1,

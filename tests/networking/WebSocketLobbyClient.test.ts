@@ -34,6 +34,7 @@ describe('WebSocketLobbyClient lobby discovery', () => {
       hostName: 'Host',
       playerCount: 1,
       maximumPlayers: 4,
+      teamSize: 2,
       passwordProtected: true,
     }];
 
@@ -106,6 +107,30 @@ describe('WebSocketLobbyClient lobby discovery', () => {
     ]);
     expect(controls).toEqual(['reset']);
     expect(returnedToLobby).toBe(1);
+  });
+
+  it('sends chat and keeps a bounded received-message history', async () => {
+    const Client = await loadClient();
+    const client = await Client.connect('ws://test');
+    const socket = latestSocket(client);
+    const received: string[] = [];
+    client.onChat((message) => received.push(message.text));
+
+    client.sendChat('  hello drivers  ');
+    socket.receive({
+      type: 'chat',
+      message: {
+        playerId: 'host',
+        playerName: 'Host',
+        team: 'azure',
+        text: 'hello drivers',
+        sentAt: 1,
+      },
+    });
+
+    expect(JSON.parse(socket.sent[0] ?? '')).toEqual({ type: 'chat', text: 'hello drivers' });
+    expect(received).toEqual(['hello drivers']);
+    expect(client.currentChatMessages().map(({ text }) => text)).toEqual(['hello drivers']);
   });
 });
 

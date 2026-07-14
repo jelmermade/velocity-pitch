@@ -5,6 +5,7 @@ import type {
   AuthoritativeFrame,
   ClientLobbyMessage,
   LobbyPlayer,
+  LobbyChatMessage,
   LobbySummary,
   MatchControlAction,
   ServerLobbyMessage,
@@ -39,6 +40,8 @@ export class WebSocketLobbyClient {
   private readonly removedHandlers = new Set<(reason: string) => void>();
   private readonly matchControlHandlers = new Set<(action: MatchControlAction) => void>();
   private readonly returnedToLobbyHandlers = new Set<() => void>();
+  private readonly chatHandlers = new Set<(message: LobbyChatMessage) => void>();
+  private readonly chatMessages: LobbyChatMessage[] = [];
   private joinResolve: (() => void) | null = null;
   private joinReject: ((reason: Error) => void) | null = null;
   private lobbyListResolve: ((lobbies: readonly LobbySummary[]) => void) | null = null;
@@ -103,6 +106,11 @@ export class WebSocketLobbyClient {
     if (this.isHost()) this.send({ type: 'finishMatch' });
   }
 
+  sendChat(text: string): void {
+    const message = text.trim().slice(0, 160);
+    if (message) this.send({ type: 'chat', text: message });
+  }
+
   updateMatchSettings(settings: MatchSettings): void {
     if (!this.isHost()) return;
     this.setMatchSettings(settings);
@@ -141,6 +149,11 @@ export class WebSocketLobbyClient {
     return () => this.returnedToLobbyHandlers.delete(handler);
   }
 
+  onChat(handler: (message: LobbyChatMessage) => void): () => void {
+    this.chatHandlers.add(handler);
+    return () => this.chatHandlers.delete(handler);
+  }
+
   isHost(): boolean {
     return this.players.some(({ id, host }) => id === this.playerId && host);
   }
@@ -149,6 +162,7 @@ export class WebSocketLobbyClient {
   currentLobbyName(): string { return this.lobbyName; }
   currentPlayers(): readonly LobbyPlayer[] { return this.players; }
   currentMatchSettings(): MatchSettings { return this.matchSettings; }
+  currentChatMessages(): readonly LobbyChatMessage[] { return this.chatMessages; }
 
   commandsForHost(localCommand: PlayerCommand): ReadonlyMap<string, PlayerCommand> {
     const commands = new Map(this.remoteCommands);
@@ -262,6 +276,12 @@ export class WebSocketLobbyClient {
       this.returnedToLobbyHandlers.forEach((handler) => handler());
       return;
     }
+    if (message.type === 'chat') {
+      this.chatMessages.push(message.message);
+      if (this.chatMessages.length > 50) this.chatMessages.shift();
+      this.chatHandlers.forEach((handler) => handler(message.message));
+      return;
+    }
     if (message.type === 'remoteInput') {
       const previousSequence = this.remoteSequences.get(message.playerId) ?? -1;
       if (message.sequence <= previousSequence) return;
@@ -275,8 +295,14 @@ export class WebSocketLobbyClient {
 
   private updateRoster(players: readonly LobbyPlayer[]): void {
     this.players = players;
-    this.players.forEach(({ id }) => {
-      if (id !== this.playerId && !this.remoteCommands.has(id)) this.remoteCommands.set(id, NEUTRAL_COMMAND);
+    const remotePlayerIds = new Set(players
+      .filter(({ id, bot }) => id !== this.playerId && !bot)
+      .map(({ id }) => id));
+    [...this.remoteCommands.keys()].forEach((id) => {
+      if (!remotePlayerIds.has(id)) this.remoteCommands.delete(id);
+    });
+    remotePlayerIds.forEach((id) => {
+      if (!this.remoteCommands.has(id)) this.remoteCommands.set(id, NEUTRAL_COMMAND);
     });
     this.rosterHandlers.forEach((handler) => handler(players));
   }

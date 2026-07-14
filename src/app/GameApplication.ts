@@ -45,7 +45,9 @@ export class GameApplication {
     const events = new EventBus<GameEventMap>();
     const input = new InputManager(window);
     const world = await RapierPhysicsWorld.create();
-    const session: GameSession = startedLobby ? new NetworkSession(startedLobby) : new LocalSession();
+    const session: GameSession = startedLobby
+      ? new NetworkSession(startedLobby)
+      : new LocalSession(matchSettings.teamSize);
     const simulation = new GameSimulation(world, events, session.players, session.localPlayerId, matchSettings);
     const runtime: {
       renderer?: GameRenderer;
@@ -85,6 +87,15 @@ export class GameApplication {
         onLeave,
         onResetMatch: () => startedLobby?.client.controlMatch('reset'),
         onStopMatch: () => startedLobby?.client.controlMatch('stop'),
+        ...(startedLobby ? {
+          chat: {
+            messages: startedLobby.client.currentChatMessages(),
+            send: (text: string) => startedLobby.client.sendChat(text),
+            subscribe: (handler: Parameters<typeof startedLobby.client.onChat>[0]) => (
+              startedLobby.client.onChat(handler)
+            ),
+          },
+        } : {}),
       },
     );
     const renderer = new GameRenderer(ui.renderContainer(), events, session.players, session.localPlayerId);
@@ -111,7 +122,7 @@ export class GameApplication {
     const loop = new GameLoop(
       (deltaSeconds) => {
         const localCommand = input.sample();
-        const observedFrame = session instanceof LocalSession ? simulation.authoritativeFrame(tick) : undefined;
+        const observedFrame = session.authoritative ? simulation.authoritativeFrame(tick) : undefined;
         const commands = session.commandsForTick(tick, localCommand, observedFrame);
         if (localCommand.toggleFpsCounter) ui.toggleFpsCounter();
         camera.handleCommand(localCommand);
@@ -154,7 +165,6 @@ export class GameApplication {
           ? simulation.authoritativeFrame(tick, alpha)
           : guestInterpolator.sample(performance.now() / 1000) ?? guestFrame;
         const baseSnapshot = session.authoritative ? simulation.snapshot(alpha) : networkFrame?.snapshot ?? simulation.snapshot(alpha);
-        const replaying = baseSnapshot.match.phase === 'replay';
         const ended = baseSnapshot.match.phase === 'ended';
         const winningTeam = baseSnapshot.match.azureScore === baseSnapshot.match.coralScore
           ? null
@@ -163,13 +173,11 @@ export class GameApplication {
         const focusPlayerId = ended
           ? victoryLineup?.keys().next().value
           : session.localPlayerId;
-        const localCar = replaying ? undefined : networkFrame?.cars[focusPlayerId ?? session.localPlayerId];
+        const localCar = networkFrame?.cars[focusPlayerId ?? session.localPlayerId];
         const snapshot = localCar ? { ...baseSnapshot, car: localCar } : baseSnapshot;
-        const renderedCars = replaying
-          ? { [session.localPlayerId]: snapshot.car }
-          : ended && networkFrame && victoryLineup
-            ? selectVictoryCars(networkFrame.cars, victoryLineup)
-            : networkFrame?.cars;
+        const renderedCars = ended && networkFrame && victoryLineup
+          ? selectVictoryCars(networkFrame.cars, victoryLineup)
+          : networkFrame?.cars;
         audio.update(snapshot.car, deltaSeconds, snapshot.match.paused);
         renderer.update(snapshot, renderedCars, deltaSeconds);
         camera.update(snapshot, deltaSeconds);

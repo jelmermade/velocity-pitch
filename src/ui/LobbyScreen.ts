@@ -7,6 +7,7 @@ import {
   sanitizeMatchSettings,
   type MatchSettings,
 } from '../gameplay/match/MatchSettings';
+import { ChatPanel } from './ChatPanel';
 
 export interface GameLaunch {
   readonly lobby: StartedLobby | null;
@@ -19,6 +20,7 @@ export class LobbyScreen {
   private matchSettings = DEFAULT_MATCH_SETTINGS;
   private browserRequestId = 0;
   private lobbySubscriptions: Array<() => void> = [];
+  private chatPanel: ChatPanel | null = null;
 
   constructor(private readonly root: HTMLElement) {}
 
@@ -92,15 +94,19 @@ export class LobbyScreen {
         <section class="lobby-card">
           <p class="eyebrow">SOLO GARAGE</p>
           <h1>SINGLE PLAYER</h1>
-          <p class="lobby-status">2V2 // DRIVER + 3 BOTS</p>
+          <p class="lobby-status" data-single-player-summary></p>
           ${this.matchSettingsMarkup(false)}
           <div class="lobby-actions">
-            <button type="button" data-start-single-player>START 2V2 MATCH</button>
+            <button type="button" data-start-single-player></button>
             <button type="button" data-back>BACK</button>
           </div>
         </section>
       </main>`;
-    this.bindMatchSettingsControls((settings) => { this.matchSettings = settings; });
+    this.bindMatchSettingsControls((settings) => {
+      this.matchSettings = settings;
+      this.updateSinglePlayerCopy();
+    });
+    this.updateSinglePlayerCopy();
     this.require('[data-start-single-player]').addEventListener('click', () => {
       resolve({ lobby: null, settings: this.matchSettings });
     });
@@ -250,30 +256,57 @@ export class LobbyScreen {
 
   private renderWaiting(players: readonly LobbyPlayer[], resolve: (value: GameLaunch) => void): void {
     if (!this.client) return;
+    this.chatPanel?.dispose();
     const lobbyId = this.client.currentLobbyId();
     const lobbyName = this.client.currentLobbyName();
     const inviteUrl = `${NETWORK_CONFIG.publicGameUrl}/?lobby=${lobbyId}`;
+    const humanPlayers = players.filter((player) => !player.bot).length;
+    const maximumPlayers = this.matchSettings.teamSize * 2;
     this.root.innerHTML = `
       <main class="lobby-screen">
-        <section class="lobby-card">
-          <p class="eyebrow">LOBBY ${lobbyId}</p>
-          <h1>${escapeHtml(lobbyName || (this.client.isHost() ? 'YOUR LOBBY' : 'WAITING FOR HOST'))}</h1>
-          <div class="lobby-roster">${players.map((player) => playerRow(player, this.client?.isHost() ?? false)).join('')}</div>
-          ${this.matchSettingsMarkup(!this.client.isHost())}
-          <label>INVITE LINK
-            <span class="invite-link-field">
-              <input data-invite-url readonly value="${escapeHtml(inviteUrl)}">
-              <button type="button" data-copy-invite aria-label="Copy invite link">COPY</button>
-            </span>
-          </label>
-          <p class="lobby-status" data-lobby-status>${escapeHtml(this.status)}</p>
-          <div class="lobby-actions">
-            ${this.client.isHost() ? '<button type="button" data-start-match>START MATCH</button>' : ''}
-            <button class="leave-match" type="button" data-leave-waiting>LEAVE LOBBY</button>
+        <section class="lobby-card lobby-card--waiting">
+          <header class="lobby-waiting__header">
+            <div>
+              <p class="eyebrow">LOBBY ${lobbyId}</p>
+              <h1>${escapeHtml(lobbyName || (this.client.isHost() ? 'YOUR LOBBY' : 'WAITING FOR HOST'))}</h1>
+            </div>
+            <div class="lobby-waiting__format">
+              <strong>${this.matchSettings.teamSize}V${this.matchSettings.teamSize}</strong>
+              <span>${humanPlayers}/${maximumPlayers} HUMAN DRIVERS</span>
+            </div>
+          </header>
+          <div class="lobby-waiting__grid">
+            <section class="lobby-waiting__panel lobby-waiting__setup">
+              <header class="lobby-waiting__panel-title"><b>MATCH SETUP</b><span>HOST CONFIGURATION</span></header>
+              ${this.matchSettingsMarkup(!this.client.isHost())}
+              <label>INVITE LINK
+                <span class="invite-link-field">
+                  <input data-invite-url readonly value="${escapeHtml(inviteUrl)}">
+                  <button type="button" data-copy-invite aria-label="Copy invite link">COPY</button>
+                </span>
+              </label>
+            </section>
+            <section class="lobby-waiting__panel lobby-waiting__social">
+              <header class="lobby-waiting__panel-title"><b>DRIVER GRID</b><span>${players.length} SLOTS READY</span></header>
+              <div class="lobby-roster">${players.map((player) => playerRow(player, this.client?.isHost() ?? false)).join('')}</div>
+              <div class="lobby-chat" data-chat-panel></div>
+            </section>
           </div>
+          <footer class="lobby-waiting__footer">
+            <p class="lobby-status" data-lobby-status>${escapeHtml(this.status)}</p>
+            <div class="lobby-actions">
+              ${this.client.isHost() ? '<button type="button" data-start-match>START MATCH</button>' : ''}
+              <button class="leave-match" type="button" data-leave-waiting>LEAVE LOBBY</button>
+            </div>
+          </footer>
         </section>
       </main>`;
     this.bindMatchSettingsControls((settings) => this.client?.updateMatchSettings(settings));
+    this.chatPanel = new ChatPanel(this.require('[data-chat-panel]'), {
+      messages: this.client.currentChatMessages(),
+      send: (text) => this.client?.sendChat(text),
+      subscribe: (handler) => this.client?.onChat(handler) ?? (() => {}),
+    });
     this.require('[data-copy-invite]').addEventListener('click', () => {
       void navigator.clipboard.writeText(inviteUrl).then(() => this.setStatus('Invite link copied'));
     });
@@ -302,6 +335,8 @@ export class LobbyScreen {
   }
 
   private clearLobbySubscriptions(): void {
+    this.chatPanel?.dispose();
+    this.chatPanel = null;
     this.lobbySubscriptions.splice(0).forEach((unsubscribe) => unsubscribe());
   }
 
@@ -312,6 +347,14 @@ export class LobbyScreen {
         <div class="match-settings__heading">
           <b>MATCH TUNING</b><span>${disabled ? 'HOST CONTROLLED' : 'SESSION ONLY'}</span>
         </div>
+        ${matchRange(
+          'TEAM SIZE',
+          'team-size',
+          this.matchSettings.teamSize,
+          MATCH_SETTING_LIMITS.teamSize,
+          'V',
+          disabledAttribute,
+        )}
         ${matchRange(
           'AUTO BOOST REFILL',
           'boost-recharge',
@@ -344,6 +387,7 @@ export class LobbyScreen {
     if (!inputs) return;
     const update = (): void => {
       const settings = sanitizeMatchSettings({
+        teamSize: Number(inputs.teamSize.value),
         boostRechargePerSecond: Number(inputs.recharge.value),
         boostPowerMultiplier: Number(inputs.boostPower.value),
         hitPowerMultiplier: Number(inputs.hitPower.value),
@@ -359,23 +403,38 @@ export class LobbyScreen {
   private updateMatchSettingsControls(settings: MatchSettings): void {
     const inputs = this.matchSettingInputs();
     if (!inputs) return;
+    inputs.teamSize.value = settings.teamSize.toString();
     inputs.recharge.value = settings.boostRechargePerSecond.toString();
     inputs.boostPower.value = settings.boostPowerMultiplier.toString();
     inputs.hitPower.value = settings.hitPowerMultiplier.toString();
     this.setMatchOutput('boost-recharge', `${settings.boostRechargePerSecond}/s`);
+    this.setMatchOutput('team-size', `${settings.teamSize}V${settings.teamSize}`);
     this.setMatchOutput('boost-power', `${settings.boostPowerMultiplier.toFixed(1)}x`);
     this.setMatchOutput('hit-power', `${settings.hitPowerMultiplier.toFixed(1)}x`);
   }
 
   private matchSettingInputs(): {
+    readonly teamSize: HTMLInputElement;
     readonly recharge: HTMLInputElement;
     readonly boostPower: HTMLInputElement;
     readonly hitPower: HTMLInputElement;
   } | null {
+    const teamSize = this.root.querySelector<HTMLInputElement>('[name="team-size"]');
     const recharge = this.root.querySelector<HTMLInputElement>('[name="boost-recharge"]');
     const boostPower = this.root.querySelector<HTMLInputElement>('[name="boost-power"]');
     const hitPower = this.root.querySelector<HTMLInputElement>('[name="hit-power"]');
-    return recharge && boostPower && hitPower ? { recharge, boostPower, hitPower } : null;
+    return teamSize && recharge && boostPower && hitPower
+      ? { teamSize, recharge, boostPower, hitPower }
+      : null;
+  }
+
+  private updateSinglePlayerCopy(): void {
+    const format = `${this.matchSettings.teamSize}V${this.matchSettings.teamSize}`;
+    const botCount = this.matchSettings.teamSize * 2 - 1;
+    const summary = this.root.querySelector<HTMLElement>('[data-single-player-summary]');
+    const button = this.root.querySelector<HTMLButtonElement>('[data-start-single-player]');
+    if (summary) summary.textContent = `${format} // DRIVER + ${botCount} ${botCount === 1 ? 'BOT' : 'BOTS'}`;
+    if (button) button.textContent = `START ${format} MATCH`;
   }
 
   private setMatchOutput(name: string, value: string): void {
@@ -410,7 +469,7 @@ const playerRow = (player: LobbyPlayer, hostControls: boolean): string => `
   <div class="lobby-player lobby-player--${player.team}">
     <span>${escapeHtml(player.name)}</span>
     <b>${player.team.toUpperCase()}${player.host ? ' // HOST' : ''}</b>
-    ${hostControls ? `<span class="lobby-player__controls">
+    ${hostControls && !player.bot ? `<span class="lobby-player__controls">
       <button type="button" data-set-player-team="${escapeHtml(player.id)}" data-team="${player.team === 'azure' ? 'coral' : 'azure'}">MOVE TO ${player.team === 'azure' ? 'CORAL' : 'AZURE'}</button>
       ${player.host ? '' : `<button class="lobby-player__kick" type="button" data-kick-player="${escapeHtml(player.id)}">KICK</button>`}
     </span>` : ''}
@@ -422,7 +481,7 @@ const lobbyBrowserRow = (lobby: LobbySummary, invited: boolean): string => `
       <span class="lobby-browser-row__code">${escapeHtml(lobby.id)}</span>
       <span class="lobby-browser-row__name">${escapeHtml(lobby.name)}</span>
       <span class="lobby-browser-row__host">HOST: ${escapeHtml(lobby.hostName)}</span>
-      <b>${lobby.playerCount}/${lobby.maximumPlayers} DRIVERS</b>
+      <b>${lobby.teamSize}V${lobby.teamSize} // ${lobby.playerCount}/${lobby.maximumPlayers} DRIVERS</b>
       <i>${invited ? 'INVITED' : lobby.passwordProtected ? 'LOCKED' : 'OPEN'}</i>
     </div>
     ${lobby.passwordProtected ? `<input data-browser-password="${escapeHtml(lobby.id)}" type="password" maxlength="64" autocomplete="current-password" placeholder="Lobby password" aria-label="Password for lobby ${escapeHtml(lobby.id)}">` : ''}

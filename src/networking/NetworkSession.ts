@@ -1,5 +1,7 @@
-import type { PlayerCommand } from '../input/PlayerCommand';
+import { NEUTRAL_COMMAND, type PlayerCommand } from '../input/PlayerCommand';
 import { RUNTIME_CONFIG } from '../app/RuntimeConfig';
+import { BotController } from '../gameplay/bots/BotController';
+import { botRole } from '../gameplay/bots/BotRoster';
 import type { GameSession } from './GameSession';
 import type { AuthoritativeFrame, LobbyPlayer } from './LobbyProtocol';
 import type { StartedLobby } from './WebSocketLobbyClient';
@@ -12,15 +14,32 @@ export class NetworkSession implements GameSession {
   readonly authoritative: boolean;
   private lastGuestCommand: PlayerCommand | null = null;
   private lastGuestInputTick = Number.NEGATIVE_INFINITY;
+  private readonly bots: ReadonlyMap<string, BotController>;
 
   constructor(private readonly lobby: StartedLobby) {
     this.localPlayerId = lobby.playerId;
     this.players = lobby.players;
     this.authoritative = lobby.playerId === lobby.hostId;
+    this.bots = new Map(this.authoritative
+      ? this.players.filter((player) => player.bot).map((player) => [
+          player.id,
+          new BotController(player.id, player.team, botRole(player)),
+        ])
+      : []);
   }
 
-  commandsForTick(tick: number, localCommand: PlayerCommand): ReadonlyMap<string, PlayerCommand> {
-    if (this.authoritative) return this.lobby.client.commandsForHost(localCommand);
+  commandsForTick(
+    tick: number,
+    localCommand: PlayerCommand,
+    observedFrame?: AuthoritativeFrame,
+  ): ReadonlyMap<string, PlayerCommand> {
+    if (this.authoritative) {
+      const commands = new Map(this.lobby.client.commandsForHost(localCommand));
+      this.bots.forEach((bot, playerId) => {
+        commands.set(playerId, observedFrame ? bot.command(observedFrame, tick) : NEUTRAL_COMMAND);
+      });
+      return commands;
+    }
     if (
       !this.lastGuestCommand
       || !commandsEqual(localCommand, this.lastGuestCommand)

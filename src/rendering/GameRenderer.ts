@@ -21,6 +21,9 @@ export class GameRenderer {
   private readonly bloom: BloomPipeline;
   private readonly arena: ArenaView;
   private readonly cars = new Map<string, CarView>();
+  private readonly nameplates = new Map<string, HTMLElement>();
+  private readonly nameplateLayer: HTMLElement;
+  private readonly nameplatePosition = new THREE.Vector3();
   private readonly ball = new BallView();
   private readonly boostPickups = new BoostPickupView();
   private readonly goalExplosion: GoalExplosionView;
@@ -45,6 +48,16 @@ export class GameRenderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.append(this.renderer.domElement);
+    this.nameplateLayer = document.createElement('div');
+    this.nameplateLayer.className = 'vehicle-nameplates';
+    players.forEach((player) => {
+      const label = document.createElement('span');
+      label.className = `vehicle-nameplate vehicle-nameplate--${player.team}`;
+      label.textContent = player.name;
+      this.nameplates.set(player.id, label);
+      this.nameplateLayer.append(label);
+    });
+    container.append(this.nameplateLayer);
     configureLighting(this.scene, this.renderer);
 
     this.arena = new ArenaView();
@@ -82,6 +95,7 @@ export class GameRenderer {
   }
 
   render(deltaSeconds: number): void {
+    this.updateNameplates();
     this.boostPickups.animate(deltaSeconds);
     this.goalExplosion.update(deltaSeconds);
     const pixelRatio = document.hidden ? null : this.adaptivePixelRatio.update(deltaSeconds);
@@ -101,9 +115,27 @@ export class GameRenderer {
     this.ball.dispose();
     this.boostPickups.dispose();
     this.goalExplosion.dispose();
+    this.nameplateLayer.remove();
     this.bloom.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
+  }
+
+  private updateNameplates(): void {
+    this.camera.updateMatrixWorld();
+    this.cars.forEach((car, playerId) => {
+      const label = this.nameplates.get(playerId);
+      if (!label) return;
+      this.nameplatePosition.set(car.group.position.x, car.group.position.y + 2.7, car.group.position.z);
+      this.nameplatePosition.project(this.camera);
+      const visible = car.group.visible
+        && this.nameplatePosition.z >= -1
+        && this.nameplatePosition.z <= 1;
+      label.hidden = !visible;
+      if (!visible) return;
+      label.style.left = `${(this.nameplatePosition.x * 0.5 + 0.5) * 100}%`;
+      label.style.top = `${(-this.nameplatePosition.y * 0.5 + 0.5) * 100}%`;
+    });
   }
 
   private readonly onResize = (): void => {

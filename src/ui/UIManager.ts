@@ -4,6 +4,7 @@ import type { LobbyPlayer, TeamId } from '../networking/LobbyProtocol';
 import type { SettingsHandlers } from './menus/SettingsMenu';
 import { SettingsMenu } from './menus/SettingsMenu';
 import { PauseMenu } from './menus/PauseMenu';
+import { ChatPanel, type ChatPanelSource } from './ChatPanel';
 
 const FPS_STORAGE_KEY = 'velocity-pitch:show-fps';
 const POSITION_STORAGE_KEY = 'velocity-pitch:show-position';
@@ -26,6 +27,7 @@ export class UIManager {
   private readonly playerScoreboardCoral: HTMLElement;
   private readonly pauseMenu: PauseMenu;
   private readonly settingsMenu: SettingsMenu;
+  private readonly chatPanel: ChatPanel | null;
   private fpsVisible = false;
   private positionVisible = false;
   private smoothedFrameSeconds = 1 / 60;
@@ -42,6 +44,7 @@ export class UIManager {
       readonly onLeave: () => void;
       readonly onResetMatch: () => void;
       readonly onStopMatch: () => void;
+      readonly chat?: ChatPanelSource;
     },
   ) {
     root.innerHTML = `
@@ -56,11 +59,14 @@ export class UIManager {
           </header>
           <section class="announcement" data-announcement></section>
           <div class="countdown" data-countdown></div>
-          <aside class="camera-tag">CAM <b data-camera-mode>BALL</b></aside>
-          <div class="debug-readout">
-            <aside class="fps-counter" data-fps-counter hidden>FPS <b data-fps-value>60</b></aside>
-            <aside class="position-counter" data-position-counter hidden>POS <b data-car-position>X 0.00 Y 0.00 Z 0.00</b></aside>
+          <div class="match-hud-stack">
+            ${actions.chat ? '<div class="match-chat" data-chat-panel></div>' : ''}
+            <div class="debug-readout">
+              <aside class="fps-counter" data-fps-counter hidden>FPS <b data-fps-value>60</b></aside>
+              <aside class="position-counter" data-position-counter hidden>POS <b data-car-position>X 0.00 Y 0.00 Z 0.00</b></aside>
+            </div>
           </div>
+          <aside class="camera-tag">CAM <b data-camera-mode>BALL</b></aside>
           <section class="player-scoreboard" data-player-scoreboard hidden aria-label="Match score and players">
             <p class="eyebrow">LIVE MATCH // HOLD TAB</p>
             <header class="player-scoreboard__score">
@@ -84,6 +90,7 @@ export class UIManager {
             <span><b>LMB</b> BOOST</span><span><b>SHIFT</b> SLIDE</span>
             <span><b>Q E</b> AIR ROLL</span><span><b>SPACE</b> BALL CAM</span>
             <span><b>TAB</b> SCORE + PLAYERS</span>
+            ${actions.chat ? '<span><b>ENTER</b> CHAT</span>' : ''}
           </aside>
           <div class="boost-gauge" aria-label="Boost">
             <span class="boost-label">BOOST</span>
@@ -137,6 +144,9 @@ export class UIManager {
       onShowFps: (visible) => this.setFpsVisible(visible),
       onShowPosition: (visible) => this.setPositionVisible(visible),
     });
+    this.chatPanel = actions.chat
+      ? new ChatPanel(this.require('[data-chat-panel]'), actions.chat)
+      : null;
     this.setFpsVisible(this.loadFpsPreference());
     this.setPositionVisible(this.loadPositionPreference());
   }
@@ -186,7 +196,10 @@ export class UIManager {
     else this.announcement.textContent = '';
   }
 
-  dispose(): void { this.root.replaceChildren(); }
+  dispose(): void {
+    this.chatPanel?.dispose();
+    this.root.replaceChildren();
+  }
 
   private setFpsVisible(visible: boolean): void {
     this.fpsVisible = visible;
@@ -266,7 +279,9 @@ export const playerRosterMarkup = (
   const teamPlayers = players.filter((player) => player.team === team);
   if (teamPlayers.length === 0) return '<p class="player-scoreboard__empty">NO DRIVERS</p>';
   return teamPlayers.map((player) => {
-    const markers = [player.host ? 'HOST' : '', player.id === localPlayerId ? 'YOU' : ''].filter(Boolean).join(' // ');
+    const markers = [player.host ? 'HOST' : '', player.bot ? 'BOT' : '', player.id === localPlayerId ? 'YOU' : '']
+      .filter(Boolean)
+      .join(' // ');
     return `<div class="player-scoreboard__player"><span>${escapeHtml(player.name)}</span><small>${markers}</small></div>`;
   }).join('');
 };

@@ -4,7 +4,7 @@ import { ARENA_TUNING } from '../../core/config/ArenaTuning';
 import { BALL_TUNING } from '../../core/config/BallTuning';
 import { distance, length, sub, type Vec3 } from '../../core/math/Vector3';
 import { NEUTRAL_COMMAND, type PlayerCommand } from '../../input/PlayerCommand';
-import type { AuthoritativeFrame, LobbyPlayer } from '../../networking/LobbyProtocol';
+import type { AuthoritativeFrame, LobbyPlayer, TeamId } from '../../networking/LobbyProtocol';
 import type { PhysicsWorld } from '../../physics/PhysicsWorld';
 import { createArena } from '../arena/Arena';
 import { GOALS } from '../arena/ArenaDefinition';
@@ -44,7 +44,12 @@ export class GameSimulation {
   ) {
     createArena(world);
     const carTuning = carTuningForMatch(settings);
-    this.players.forEach((player, index) => this.cars.set(player.id, new Car(world, carTuning, spawnFor(player, index))));
+    const teamSlots: Record<TeamId, number> = { azure: 0, coral: 0 };
+    this.players.forEach((player) => {
+      const teamSlot = teamSlots[player.team];
+      teamSlots[player.team] += 1;
+      this.cars.set(player.id, new Car(world, carTuning, spawnFor(player, teamSlot)));
+    });
     if (!this.cars.has(this.localPlayerId)) throw new Error('Local player is missing from the simulation roster');
     this.ball = new Ball(world);
     this.match = new MatchController(events);
@@ -97,22 +102,26 @@ export class GameSimulation {
       this.previousCars = this.currentCars;
     }
     if (this.current.match.phase === 'playing' || this.current.match.phase === 'overtime') {
-      this.replay.record(this.current);
+      this.replay.record(this.current, Object.fromEntries(this.currentCars));
     }
   }
 
   snapshot(alpha: number): SimulationSnapshot {
     const liveSnapshot = interpolateSnapshots(this.previous, this.current, alpha);
     if (liveSnapshot.match.phase !== 'replay') return liveSnapshot;
-    const replaySnapshot = this.replay.sample(liveSnapshot.match.replayProgress);
-    return replaySnapshot ? { ...replaySnapshot, match: liveSnapshot.match } : liveSnapshot;
+    const replayFrame = this.replay.sample(liveSnapshot.match.replayProgress);
+    return replayFrame ? { ...replayFrame.snapshot, match: liveSnapshot.match } : liveSnapshot;
   }
 
   authoritativeFrame(sequence: number, alpha = 1): AuthoritativeFrame {
+    const snapshot = this.snapshot(1);
+    const replayFrame = snapshot.match.phase === 'replay'
+      ? this.replay.sample(snapshot.match.replayProgress)
+      : null;
     return {
       sequence,
-      snapshot: this.snapshot(1),
-      cars: Object.fromEntries([...this.currentCars].map(([playerId, state]) => [
+      snapshot,
+      cars: replayFrame?.cars ?? Object.fromEntries([...this.currentCars].map(([playerId, state]) => [
         playerId,
         this.previousCars.get(playerId)
           ? interpolateCarState(this.previousCars.get(playerId) as ReturnType<Car['state']>, state, alpha)
@@ -200,7 +209,7 @@ export class GameSimulation {
   private scoreGoal(team: 'azure' | 'coral'): void {
     const goal = GOALS.find(({ teamScored }) => teamScored === team);
     if (!goal || !this.match.goal(team, goal.center)) return;
-    this.replay.freeze(this.capture());
+    this.replay.freeze(this.capture(), Object.fromEntries(this.captureCars()));
     this.goalExplosion.trigger(goal.center, [...this.cars.values()]);
   }
 
@@ -249,8 +258,7 @@ export class GameSimulation {
   }
 }
 
-const spawnFor = (player: LobbyPlayer, rosterIndex: number): CarSpawn => {
-  const teamSlot = Math.floor(rosterIndex / 2);
+const spawnFor = (player: LobbyPlayer, teamSlot: number): CarSpawn => {
   const lateralSpacing = ARENA_TUNING.halfWidth * 0.235;
   const xOffsets = [0, -lateralSpacing, lateralSpacing, -lateralSpacing * 2, lateralSpacing * 2] as const;
   const x = xOffsets[teamSlot] ?? 0;

@@ -6,7 +6,9 @@ Velocity Pitch is a browser-based rocket car soccer game built with TypeScript, 
 
 - Rocket-car handling with suspension, powersliding, boost, aerial control, recovery, double jumps, and directional dodges.
 - A curved enclosed arena with goals, boost pickups, goal explosions, replays, overtime, and a post-match winner presentation.
-- Single-player matches with session-only boost recharge, boost power, and hit power controls.
+- 1v1, 2v2, or 3v3 matches with bots filling every open team slot.
+- Player nameplates above every vehicle and server-relayed multiplayer lobby/match chat.
+- Single-player matches with session-only team size, boost recharge, boost power, and hit power controls.
 - A multiplayer lobby browser with named lobbies, optional passwords, invite links, and saved driver names.
 - Host controls for team assignment, player removal, match reset, match stop, and rematches from the lobby.
 - Host-authoritative multiplayer physics with command buffering, snapshot interpolation, and limited extrapolation.
@@ -47,7 +49,6 @@ Keep deployment-specific values in an untracked `.env` file. Do not add credenti
 | `VITE_PUBLIC_URL` | Optional public game origin used to build lobby invite links. |
 | `MULTIPLAYER_HOST` | Bind address for the multiplayer service. |
 | `MULTIPLAYER_PORT` | Listening port for the multiplayer service. |
-| `MULTIPLAYER_MAX_PLAYERS` | Maximum number of players allowed in a lobby. |
 
 Variables prefixed with `VITE_` are bundled into browser code and must never contain secrets. Without browser overrides, multiplayer uses the current origin and the `/ws` path. For production, serve the built client and proxy `/ws` to the multiplayer service over secure WebSockets.
 
@@ -77,6 +78,7 @@ Variables prefixed with `VITE_` are bundled into browser code and must never con
 | `Q` / `E` | Air roll |
 | `Space` | Toggle ball camera |
 | `Tab` | Hold to show the score and player roster |
+| `Enter` | Focus multiplayer chat |
 | `F2` | Toggle the FPS readout |
 | `F3` | Toggle the debug free camera |
 | `Escape` | Open or close the pause menu |

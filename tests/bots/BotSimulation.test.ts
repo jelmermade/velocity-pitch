@@ -37,8 +37,8 @@ describe('singleplayer bot simulation', () => {
     }
     const after = simulation.authoritativeFrame(kickoffTicks + RUNTIME_CONFIG.physicsHz);
     const positions = Object.values(before.cars).map(({ transform }) => transform.position);
-    const emberBefore = before.cars['bot-ember']?.transform.position;
-    const emberAfter = after.cars['bot-ember']?.transform.position;
+    const emberBefore = before.cars['bot-coral-0']?.transform.position;
+    const emberAfter = after.cars['bot-coral-0']?.transform.position;
 
     expect(Object.keys(after.cars)).toHaveLength(4);
     expect(new Set(positions.map(({ x, z }) => `${x.toFixed(2)}:${z.toFixed(2)}`)).size).toBe(4);
@@ -48,5 +48,23 @@ describe('singleplayer bot simulation', () => {
       (emberAfter?.x ?? 0) - (emberBefore?.x ?? 0),
       (emberAfter?.z ?? 0) - (emberBefore?.z ?? 0),
     )).toBeGreaterThan(2);
+  });
+
+  it('spawns six separate cars for a 3v3 match', async () => {
+    world = await RapierPhysicsWorld.create();
+    const session = new LocalSession(3);
+    const simulation = new GameSimulation(
+      world,
+      new EventBus<GameEventMap>(),
+      session.players,
+      session.localPlayerId,
+    );
+
+    const frame = simulation.authoritativeFrame(0);
+    const positions = Object.values(frame.cars).map(({ transform }) => transform.position);
+
+    expect(Object.keys(frame.cars)).toHaveLength(6);
+    expect(new Set(positions.map(({ x, z }) => `${x.toFixed(2)}:${z.toFixed(2)}`)).size).toBe(6);
+    expect(session.commandsForTick(0, NEUTRAL_COMMAND, frame).size).toBe(6);
   });
 });

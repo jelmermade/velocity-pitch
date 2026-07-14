@@ -1,16 +1,25 @@
 import type { CarState } from '../gameplay/car/CarState';
 import type { SimulationSnapshot } from '../gameplay/simulation/SimulationSnapshot';
 import type { PlayerCommand } from '../input/PlayerCommand';
-import type { MatchSettings } from '../gameplay/match/MatchSettings';
+import type { MatchSettings, TeamSize } from '../gameplay/match/MatchSettings';
 
 export type TeamId = 'azure' | 'coral';
 export type MatchControlAction = 'reset' | 'stop';
+
+export interface LobbyChatMessage {
+  readonly playerId: string;
+  readonly playerName: string;
+  readonly team: TeamId;
+  readonly text: string;
+  readonly sentAt: number;
+}
 
 export interface LobbyPlayer {
   readonly id: string;
   readonly name: string;
   readonly team: TeamId;
   readonly host: boolean;
+  readonly bot?: boolean;
 }
 
 export interface LobbySummary {
@@ -19,6 +28,7 @@ export interface LobbySummary {
   readonly hostName: string;
   readonly playerCount: number;
   readonly maximumPlayers: number;
+  readonly teamSize: TeamSize;
   readonly passwordProtected: boolean;
 }
 
@@ -37,6 +47,7 @@ export type ClientLobbyMessage =
   | { readonly type: 'kickPlayer'; readonly playerId: string }
   | { readonly type: 'matchControl'; readonly action: MatchControlAction }
   | { readonly type: 'finishMatch' }
+  | { readonly type: 'chat'; readonly text: string }
   | { readonly type: 'updateMatchSettings'; readonly settings: MatchSettings }
   | { readonly type: 'input'; readonly sequence: number; readonly command: PlayerCommand }
   | { readonly type: 'authoritativeFrame'; readonly frame: AuthoritativeFrame };
@@ -50,6 +61,7 @@ export type ServerLobbyMessage =
   | { readonly type: 'removedFromLobby'; readonly reason: string }
   | { readonly type: 'matchControl'; readonly action: MatchControlAction }
   | { readonly type: 'returnedToLobby'; readonly players: readonly LobbyPlayer[]; readonly settings: MatchSettings }
+  | { readonly type: 'chat'; readonly message: LobbyChatMessage }
   | { readonly type: 'remoteInput'; readonly playerId: string; readonly sequence: number; readonly command: PlayerCommand }
   | { readonly type: 'authoritativeFrame'; readonly frame: AuthoritativeFrame }
   | { readonly type: 'error'; readonly message: string };
