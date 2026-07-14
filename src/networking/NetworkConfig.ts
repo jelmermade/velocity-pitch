@@ -6,6 +6,7 @@ const defaultWebSocketUrl = (): string => {
 interface MultiplayerEnvironment {
   readonly VITE_MULTIPLAYER_URL?: string;
   readonly VITE_PUBLIC_URL?: string;
+  readonly VITE_BOT_KNOWLEDGE_URL?: string;
 }
 
 const environment = import.meta.env as unknown as MultiplayerEnvironment;
@@ -13,6 +14,7 @@ const environment = import.meta.env as unknown as MultiplayerEnvironment;
 export const NETWORK_CONFIG = Object.freeze({
   webSocketUrl: environment.VITE_MULTIPLAYER_URL || defaultWebSocketUrl(),
   publicGameUrl: environment.VITE_PUBLIC_URL || window.location.origin,
+  botKnowledgeUrl: environment.VITE_BOT_KNOWLEDGE_URL || '/api/bot-knowledge',
   snapshotRate: 20,
   interpolationDelaySeconds: 0.06,
   maximumExtrapolationSeconds: 0.05,

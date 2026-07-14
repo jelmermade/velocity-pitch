@@ -27,6 +27,8 @@ export const fillBotSlots = (
   return players;
 };
 
+export const createBotTrainingRoster = (): readonly LobbyPlayer[] => fillBotSlots([], 3);
+
 export const botRole = (player: LobbyPlayer): BotRole => {
   const slot = Number(player.id.match(/-(\d+)$/)?.[1] ?? 0);
   return slot % 2 === 1 ? 'defender' : 'striker';

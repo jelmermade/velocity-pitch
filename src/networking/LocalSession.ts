@@ -1,6 +1,7 @@
 import type { PlayerCommand } from '../input/PlayerCommand';
 import { NEUTRAL_COMMAND } from '../input/PlayerCommand';
 import { BotController } from '../gameplay/bots/BotController';
+import { BUILT_IN_BOT_KNOWLEDGE, type BotKnowledge } from '../gameplay/bots/BotKnowledge';
 import { botRole, fillBotSlots } from '../gameplay/bots/BotRoster';
 import type { TeamSize } from '../gameplay/match/MatchSettings';
 import type { GameSession } from './GameSession';
@@ -12,7 +13,7 @@ export class LocalSession implements GameSession {
   readonly players: readonly LobbyPlayer[];
   private readonly bots: ReadonlyMap<string, BotController>;
 
-  constructor(teamSize: TeamSize = 2) {
+  constructor(teamSize: TeamSize = 2, knowledge: BotKnowledge = BUILT_IN_BOT_KNOWLEDGE) {
     this.players = fillBotSlots([
       { id: this.localPlayerId, name: 'Driver', team: 'azure', host: true },
     ], teamSize);
@@ -20,7 +21,14 @@ export class LocalSession implements GameSession {
       .filter((player) => player.bot)
       .map((player) => [
         player.id,
-        new BotController(player.id, player.team, botRole(player)),
+        new BotController(
+          player.id,
+          player.team,
+          botRole(player),
+          false,
+          knowledge,
+          this.players.filter(({ team }) => team === player.team).map(({ id }) => id),
+        ),
       ]));
   }
 

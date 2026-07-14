@@ -1,5 +1,6 @@
 import type { PlayerCommand } from '../input/PlayerCommand';
 import type { AuthoritativeFrame, LobbyPlayer } from './LobbyProtocol';
+import type { BotTrainingState } from '../gameplay/bots/BotTrainingState';
 
 export interface GameSession {
   readonly localPlayerId: string;
@@ -12,5 +13,7 @@ export interface GameSession {
   ): ReadonlyMap<string, PlayerCommand>;
   publish(frame: AuthoritativeFrame): void;
   latestFrame(): AuthoritativeFrame | null;
+  trainingState?(): BotTrainingState;
+  flushKnowledge?(): Promise<void>;
   dispose(): void;
 }

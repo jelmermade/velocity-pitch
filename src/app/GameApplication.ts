@@ -3,12 +3,15 @@ import { CameraController } from '../camera/CameraController';
 import { EventBus } from '../core/events/EventBus';
 import type { GameEventMap } from '../core/events/GameEvents';
 import { GameSimulation } from '../gameplay/simulation/GameSimulation';
+import { selectBotTrainingLeader } from '../gameplay/bots/BotTrainingState';
 import { DEFAULT_MATCH_SETTINGS, type MatchSettings } from '../gameplay/match/MatchSettings';
 import { createVictoryLineup, selectVictoryCars } from '../gameplay/match/VictoryLineup';
 import { InputManager } from '../input/InputManager';
 import { BINDINGS } from '../input/bindings';
 import { LocalSession } from '../networking/LocalSession';
+import { BotTrainingSession } from '../networking/BotTrainingSession';
 import { NetworkSession } from '../networking/NetworkSession';
+import { loadSharedBotKnowledge, submitSharedBotKnowledge } from '../networking/BotKnowledgeClient';
 import type { StartedLobby } from '../networking/WebSocketLobbyClient';
 import type { AuthoritativeFrame } from '../networking/LobbyProtocol';
 import type { GameSession } from '../networking/GameSession';
@@ -41,14 +44,28 @@ export class GameApplication {
     matchSettings: MatchSettings = startedLobby?.settings ?? DEFAULT_MATCH_SETTINGS,
     onLeave: () => void = () => {},
     onReturnToLobby: () => void = () => {},
+    mode: 'standard' | 'botTraining' = 'standard',
+    onRestartTraining: () => void = () => {},
   ): Promise<GameApplication> {
     const events = new EventBus<GameEventMap>();
     const input = new InputManager(window);
     const world = await RapierPhysicsWorld.create();
+    const training = mode === 'botTraining';
+    const botKnowledge = await loadSharedBotKnowledge();
     const session: GameSession = startedLobby
-      ? new NetworkSession(startedLobby)
-      : new LocalSession(matchSettings.teamSize);
-    const simulation = new GameSimulation(world, events, session.players, session.localPlayerId, matchSettings);
+      ? new NetworkSession(startedLobby, botKnowledge)
+      : training
+        ? new BotTrainingSession(botKnowledge, (observations) => {
+            return submitSharedBotKnowledge(observations);
+          })
+        : new LocalSession(matchSettings.teamSize, botKnowledge);
+    const simulation = new GameSimulation(
+      world,
+      events,
+      session.players,
+      session.localPlayerId,
+      matchSettings,
+    );
     const runtime: {
       renderer?: GameRenderer;
       camera?: CameraController;
@@ -81,10 +98,20 @@ export class GameApplication {
       },
       {
         players: session.players,
-        localPlayerId: session.localPlayerId,
+        localPlayerId: training ? '' : session.localPlayerId,
         multiplayer: startedLobby !== null,
+        training,
         host: startedLobby !== null && startedLobby.playerId === startedLobby.hostId,
-        onLeave,
+        onLeave: training ? async () => {
+          await session.flushKnowledge?.();
+          onLeave();
+        } : onLeave,
+        ...(training ? {
+          onRestartTraining: async () => {
+            await session.flushKnowledge?.();
+            onRestartTraining();
+          },
+        } : {}),
         onResetMatch: () => startedLobby?.client.controlMatch('reset'),
         onStopMatch: () => startedLobby?.client.controlMatch('stop'),
         ...(startedLobby ? {
@@ -119,6 +146,7 @@ export class GameApplication {
     );
     let endedSeconds = 0;
     let finishMatchSent = false;
+    let trainingFocusPlayerId = session.localPlayerId;
     const loop = new GameLoop(
       (deltaSeconds) => {
         const localCommand = input.sample();
@@ -165,6 +193,11 @@ export class GameApplication {
           ? simulation.authoritativeFrame(tick, alpha)
           : guestInterpolator.sample(performance.now() / 1000) ?? guestFrame;
         const baseSnapshot = session.authoritative ? simulation.snapshot(alpha) : networkFrame?.snapshot ?? simulation.snapshot(alpha);
+        const trainingState = session.trainingState?.();
+        if (trainingState) {
+          trainingFocusPlayerId = selectBotTrainingLeader(trainingState, trainingFocusPlayerId)
+            ?? session.localPlayerId;
+        }
         const ended = baseSnapshot.match.phase === 'ended';
         const winningTeam = baseSnapshot.match.azureScore === baseSnapshot.match.coralScore
           ? null
@@ -172,7 +205,7 @@ export class GameApplication {
         const victoryLineup = ended ? createVictoryLineup(session.players, winningTeam) : null;
         const focusPlayerId = ended
           ? victoryLineup?.keys().next().value
-          : session.localPlayerId;
+          : training ? trainingFocusPlayerId : session.localPlayerId;
         const localCar = networkFrame?.cars[focusPlayerId ?? session.localPlayerId];
         const snapshot = localCar ? { ...baseSnapshot, car: localCar } : baseSnapshot;
         const renderedCars = ended && networkFrame && victoryLineup
@@ -182,6 +215,7 @@ export class GameApplication {
         renderer.update(snapshot, renderedCars, deltaSeconds);
         camera.update(snapshot, deltaSeconds);
         ui.update(snapshot, camera.modeName());
+        ui.updateTraining(trainingState, training ? trainingFocusPlayerId : null);
         ui.setPlayerScoreboardVisible(input.isDown(BINDINGS.playerScoreboard) && !snapshot.match.paused);
         ui.updateFrameRate(deltaSeconds, snapshot.car.transform.position);
         renderer.render(deltaSeconds);

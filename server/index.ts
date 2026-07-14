@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import type {
   ClientLobbyMessage,
@@ -12,6 +13,7 @@ import type {
 import { CHAT_CHARACTER_LIMIT, CHAT_COOLDOWN_MS } from '../src/networking/LobbyProtocol';
 import { sanitizeMatchSettings, type MatchSettings } from '../src/gameplay/match/MatchSettings';
 import { fillBotSlots } from '../src/gameplay/bots/BotRoster';
+import { BotKnowledgeFileStore } from './BotKnowledgeFileStore';
 
 const port = Number(process.env.MULTIPLAYER_PORT ?? 8787);
 const host = process.env.MULTIPLAYER_HOST ?? '0.0.0.0';
@@ -33,7 +35,14 @@ interface Lobby {
   started: boolean;
 }
 
-const server = new WebSocketServer({ host, port });
+const knowledgeStore = new BotKnowledgeFileStore();
+const httpServer = createServer((request, response) => {
+  void handleHttpRequest(request, response).catch((error: unknown) => {
+    console.error('Bot knowledge request failed', error);
+    sendJson(response, 500, { error: 'Unable to access bot knowledge' });
+  });
+});
+const server = new WebSocketServer({ server: httpServer });
 const lobbies = new Map<string, Lobby>();
 const connections = new Map<WebSocket, ClientConnection>();
 
@@ -45,9 +54,24 @@ server.on('connection', (socket) => {
   socket.on('error', () => disconnect(connection));
 });
 
-server.on('listening', () => {
+httpServer.on('listening', () => {
   console.log(`Velocity Pitch multiplayer listening on ws://${host}:${port}`);
 });
+httpServer.listen(port, host);
+
+const handleHttpRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+  const pathname = new URL(request.url ?? '/', 'http://velocity-pitch.local').pathname;
+  if (request.method === 'GET' && pathname === '/api/bot-knowledge') {
+    sendJson(response, 200, await knowledgeStore.load());
+    return;
+  }
+  if (request.method === 'POST' && pathname === '/api/bot-knowledge/observations') {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, await knowledgeStore.merge(body));
+    return;
+  }
+  sendJson(response, 404, { error: 'Not found' });
+};
 
 const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage | null): void => {
   if (!message) {
@@ -374,6 +398,28 @@ const parseMessage = (payload: string): ClientLobbyMessage | null => {
   } catch {
     return null;
   }
+};
+
+const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
+  const chunks: Buffer[] = [];
+  let length = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+    length += buffer.length;
+    if (length > 64 * 1024) throw new Error('Request body exceeds 64 KiB');
+    chunks.push(buffer);
+  }
+  if (chunks.length === 0) return {};
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+};
+
+const sendJson = (response: ServerResponse, status: number, value: unknown): void => {
+  if (response.headersSent) return;
+  response.writeHead(status, {
+    'Cache-Control': 'no-store',
+    'Content-Type': 'application/json; charset=utf-8',
+  });
+  response.end(JSON.stringify(value));
 };
 
 const send = (socket: WebSocket, message: ServerLobbyMessage | ClientLobbyMessage): void => {

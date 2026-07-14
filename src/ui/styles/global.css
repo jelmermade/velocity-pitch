@@ -25,6 +25,9 @@ button {
   cursor: pointer;
 }
 button:hover { background: rgba(184, 255, 102, 0.25); }
+.bot-lab-button { border-color: rgba(255, 178, 92, 0.72); color: #ffe1bd; background: rgba(255, 178, 92, 0.1); }
+.bot-lab-button:hover { background: rgba(255, 178, 92, 0.22); }
+.bot-lab-button small { margin-left: 0.4rem; color: #ffb25c; font-size: 0.52rem; }
 .leave-match { border-color: rgba(255, 104, 93, 0.7); color: #ffd6d2; background: rgba(255, 104, 93, 0.1); }
 .leave-match:hover { background: rgba(255, 104, 93, 0.22); }
 .stop-match { border-color: rgba(255, 178, 92, 0.72); color: #ffe1bd; background: rgba(255, 178, 92, 0.1); }
@@ -76,6 +79,24 @@ canvas { display: block; width: 100%; height: 100%; }
 .match-hud-stack { position: absolute; z-index: 5; top: var(--chat-top, 1.3rem); left: var(--chat-left, 1.5rem); width: min(23rem, calc(100vw - 3rem)); }
 .camera-tag { position: absolute; z-index: 3; top: 1.3rem; right: 1.5rem; color: #68868d; font-size: 0.72rem; letter-spacing: 0.18em; }
 .camera-tag b { color: var(--acid); }
+.bot-training-panel { position: absolute; z-index: 3; top: 3rem; right: 1.5rem; width: min(25rem, calc(100vw - 3rem)); padding: 0.7rem; border: 1px solid rgba(255, 178, 92, 0.28); border-top: 2px solid #ffb25c; background: linear-gradient(135deg, rgba(5, 18, 24, 0.78), rgba(5, 18, 24, 0.42)); backdrop-filter: blur(4px); pointer-events: none; }
+.bot-training-panel > header { display: flex; justify-content: space-between; margin-bottom: 0.5rem; color: #ffe1bd; font-size: 0.58rem; letter-spacing: 0.12em; }
+.bot-training-panel > header span { color: #8a7565; font-size: 0.5rem; }
+.bot-training-panel__teams { display: grid; grid-template-columns: 1fr 1fr; gap: 0.55rem; }
+.bot-training-panel__team { min-width: 0; border-top: 1px solid; }
+.bot-training-panel__team--azure { border-color: var(--azure); }
+.bot-training-panel__team--coral { border-color: var(--coral); }
+.bot-training-panel__team h2 { margin: 0.3rem 0; color: #789198; font-size: 0.52rem; letter-spacing: 0.14em; }
+.bot-training-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.05rem 0.45rem; padding: 0.18rem 0.3rem; font-size: 0.56rem; }
+.bot-training-row:nth-of-type(even) { background: rgba(255, 255, 255, 0.025); }
+.bot-training-row--spectated { background: rgba(255, 207, 119, 0.09) !important; box-shadow: inset 2px 0 #ffcf77; }
+.bot-training-row--spectated b::before { content: 'VIEW // '; color: #ffcf77; font-size: 0.46rem; letter-spacing: 0.06em; }
+.bot-training-row b { overflow: hidden; color: #dfffff; text-overflow: ellipsis; white-space: nowrap; }
+.bot-training-row strong { color: #ffcf77; font-family: 'Russo One', sans-serif; font-size: 0.58rem; text-align: right; }
+.bot-training-row small { color: #68868d; font-size: 0.47rem; letter-spacing: 0.08em; }
+.bot-training-row i { color: #68868d; font-size: 0.47rem; font-style: normal; text-align: right; }
+.bot-training-row__reward--positive { color: var(--acid) !important; }
+.bot-training-row__reward--negative { color: var(--coral) !important; }
 .debug-readout { display: grid; grid-template-rows: repeat(2, 0.9rem); gap: 0.38rem; margin: 0.5rem 0.25rem 0; color: #68868d; font-size: 0.72rem; letter-spacing: 0.18em; }
 .debug-readout b { color: var(--azure); font-family: 'Russo One', sans-serif; }
 .position-counter { grid-row: 2; }
@@ -237,6 +258,14 @@ canvas { display: block; width: 100%; height: 100%; }
 .modal-card h1 { margin: 0.1rem 0 1.8rem; font: 3rem 'Russo One', sans-serif; letter-spacing: 0.08em; }
 .pause-menu .modal-card button, .settings-card button { display: block; width: 100%; margin: 0.6rem 0 0; }
 .modal-card p:last-child { color: #789198; font-size: 0.8rem; }
+.training-complete { z-index: 8; background: radial-gradient(circle at 50% 42%, rgba(20, 58, 65, 0.76), rgba(2, 12, 17, 0.92) 58%); }
+.training-complete__card { width: min(92vw, 36rem); border-color: rgba(255, 178, 92, 0.55); box-shadow: 0 26px 90px rgba(0, 0, 0, 0.58), inset 0 2px #ffb25c; }
+.training-complete__card h1 { margin-bottom: 0.8rem; color: #ffe1bd; font-size: clamp(1.8rem, 5vw, 3rem); }
+.training-complete__summary { max-width: 27rem; margin: 0 auto 1.6rem; color: #9cb4b9; line-height: 1.55; }
+.training-complete__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+.training-complete__actions button { width: 100%; }
+.training-complete__actions button:disabled { cursor: wait; opacity: 0.48; }
+.training-complete__status { min-height: 1rem; margin: 1rem 0 0; color: #ffcf77 !important; font-size: 0.62rem !important; letter-spacing: 0.12em; }
 .eyebrow { color: var(--acid); font-weight: 700; letter-spacing: 0.22em; font-size: 0.72rem; }
 kbd { border: 1px solid #577079; padding: 0.12rem 0.35rem; color: #dfffff; }
 .settings-card label { display: block; margin: 1.25rem 0; text-align: left; }
@@ -390,7 +419,10 @@ kbd { border: 1px solid #577079; padding: 0.12rem 0.35rem; color: #dfffff; }
   .match-chat .multiplayer-chat ol { height: 5rem; }
   .boost-gauge { right: 1rem; bottom: 1rem; transform: scale(0.8); transform-origin: right bottom; }
   .camera-tag { top: 0.8rem; right: 0.8rem; }
+  .bot-training-panel { top: 2.5rem; right: 0.8rem; width: min(20rem, calc(100vw - 1.6rem)); transform: scale(0.82); transform-origin: top right; }
   .player-scoreboard { top: 6.5rem; width: calc(100% - 1.6rem); padding: 1rem; }
   .player-scoreboard__teams { grid-template-columns: 1fr; }
   .countdown { font-size: 5rem; }
+  .training-complete__card { padding: 2rem 1.4rem; }
+  .training-complete__actions { grid-template-columns: 1fr; }
 }

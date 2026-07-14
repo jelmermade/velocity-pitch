@@ -5,6 +5,7 @@ import type { SettingsHandlers } from './menus/SettingsMenu';
 import { SettingsMenu } from './menus/SettingsMenu';
 import { PauseMenu } from './menus/PauseMenu';
 import { ChatPanel, type ChatPanelSource } from './ChatPanel';
+import type { BotTrainingState } from '../gameplay/bots/BotTrainingState';
 
 const FPS_STORAGE_KEY = 'velocity-pitch:show-fps';
 const POSITION_STORAGE_KEY = 'velocity-pitch:show-position';
@@ -28,10 +29,20 @@ export class UIManager {
   private readonly pauseMenu: PauseMenu;
   private readonly settingsMenu: SettingsMenu;
   private readonly chatPanel: ChatPanel | null;
+  private readonly trainingGeneration: HTMLElement | null;
+  private readonly trainingComplete: HTMLElement | null;
+  private readonly trainingResult: HTMLElement | null;
+  private readonly trainingRows = new Map<string, {
+    readonly row: HTMLElement;
+    readonly points: HTMLElement;
+    readonly policy: HTMLElement;
+    readonly reward: HTMLElement;
+  }>();
   private fpsVisible = false;
   private positionVisible = false;
   private smoothedFrameSeconds = 1 / 60;
   private fpsRefreshElapsed = 0;
+  private lastTrainingTick = -1;
 
   constructor(
     private readonly root: HTMLElement,
@@ -40,8 +51,10 @@ export class UIManager {
       readonly players: readonly LobbyPlayer[];
       readonly localPlayerId: string;
       readonly multiplayer: boolean;
+      readonly training?: boolean;
       readonly host: boolean;
-      readonly onLeave: () => void;
+      readonly onLeave: () => void | Promise<void>;
+      readonly onRestartTraining?: () => void | Promise<void>;
       readonly onResetMatch: () => void;
       readonly onStopMatch: () => void;
       readonly chat?: ChatPanelSource;
@@ -67,6 +80,7 @@ export class UIManager {
             </div>
           </div>
           <aside class="camera-tag">CAM <b data-camera-mode>BALL</b></aside>
+          ${actions.training ? trainingPanelMarkup(actions.players) : ''}
           <section class="player-scoreboard" data-player-scoreboard hidden aria-label="Match score and players">
             <p class="eyebrow">LIVE MATCH // HOLD TAB</p>
             <header class="player-scoreboard__score">
@@ -86,10 +100,9 @@ export class UIManager {
             </div>
           </section>
           <aside class="controls-hint">
-            <span><b>WASD</b> DRIVE / AIR</span><span><b>RMB</b> JUMP + FLIP</span>
-            <span><b>LMB</b> BOOST</span><span><b>SHIFT</b> SLIDE</span>
-            <span><b>Q E</b> AIR ROLL</span><span><b>SPACE</b> BALL CAM</span>
-            <span><b>TAB</b> SCORE + PLAYERS</span>
+            ${actions.training
+              ? '<span><b>SPACE</b> BALL CAM</span><span><b>F3</b> FREE CAM</span><span><b>TAB</b> TEAM ROSTER</span><span><b>ESC</b> PAUSE / QUIT</span>'
+              : '<span><b>WASD</b> DRIVE / AIR</span><span><b>RMB</b> JUMP + FLIP</span><span><b>LMB</b> BOOST</span><span><b>SHIFT</b> SLIDE</span><span><b>Q E</b> AIR ROLL</span><span><b>SPACE</b> BALL CAM</span><span><b>TAB</b> SCORE + PLAYERS</span>'}
             ${actions.chat ? '<span><b>ENTER</b> ALL CHAT</span><span><b>T</b> TEAM CHAT</span><span><b>Y</b> PARTY CHAT</span>' : ''}
           </aside>
           <div class="boost-gauge" aria-label="Boost">
@@ -121,6 +134,7 @@ export class UIManager {
               <button type="button" data-close-settings>BACK</button>
             </div>
           </section>
+          ${actions.training ? trainingCompletionMarkup() : ''}
         </div>
       </div>`;
     this.hud = this.require('[data-render-layer]');
@@ -147,6 +161,22 @@ export class UIManager {
     this.chatPanel = actions.chat
       ? new ChatPanel(this.require('[data-chat-panel]'), actions.chat, { mode: 'match' })
       : null;
+    this.trainingGeneration = this.root.querySelector('[data-training-generation]');
+    this.trainingComplete = this.root.querySelector('[data-training-complete]');
+    this.trainingResult = this.root.querySelector('[data-training-result]');
+    this.root.querySelectorAll<HTMLElement>('[data-training-player]').forEach((row) => {
+      const playerId = row.dataset.trainingPlayer;
+      const points = row.querySelector<HTMLElement>('[data-training-points]');
+      const policy = row.querySelector<HTMLElement>('[data-training-policy]');
+      const reward = row.querySelector<HTMLElement>('[data-training-reward]');
+      if (playerId && points && policy && reward) this.trainingRows.set(playerId, { row, points, policy, reward });
+    });
+    this.root.querySelector('[data-training-restart]')?.addEventListener('click', () => {
+      void this.runTrainingAction(actions.onRestartTraining, 'SAVING KNOWLEDGE // STARTING NEXT CYCLE');
+    });
+    this.root.querySelector('[data-training-menu]')?.addEventListener('click', () => {
+      void this.runTrainingAction(actions.onLeave, 'SAVING KNOWLEDGE // RETURNING TO MENU');
+    });
     this.setFpsVisible(this.loadFpsPreference());
     this.setPositionVisible(this.loadPositionPreference());
   }
@@ -157,6 +187,22 @@ export class UIManager {
 
   setPlayerScoreboardVisible(visible: boolean): void {
     this.playerScoreboard.hidden = !visible;
+  }
+
+  updateTraining(state?: BotTrainingState, spectatedPlayerId: string | null = null): void {
+    if (!state || state.tick - this.lastTrainingTick < 15) return;
+    this.lastTrainingTick = state.tick;
+    if (this.trainingGeneration) this.trainingGeneration.textContent = `PERSISTENT // GEN ${state.knowledgeGeneration}`;
+    state.entries.forEach((entry) => {
+      const row = this.trainingRows.get(entry.playerId);
+      if (!row) return;
+      row.row.classList.toggle('bot-training-row--spectated', entry.playerId === spectatedPlayerId);
+      row.points.textContent = entry.points.toFixed(1);
+      row.policy.textContent = entry.policy.toUpperCase();
+      row.reward.textContent = entry.lastReward > 0 ? `+${entry.lastReward.toFixed(2)}` : entry.lastReward.toFixed(2);
+      row.reward.classList.toggle('bot-training-row__reward--positive', entry.lastReward > 0);
+      row.reward.classList.toggle('bot-training-row__reward--negative', entry.lastReward < 0);
+    });
   }
 
   updateFrameRate(deltaSeconds: number, position: Vec3): void {
@@ -185,6 +231,11 @@ export class UIManager {
     this.pauseMenu.setVisible(match.paused);
     if (!match.paused) this.settingsMenu.hide();
 
+    if (this.trainingComplete) this.trainingComplete.hidden = match.phase !== 'ended';
+    if (this.trainingResult && match.phase === 'ended') {
+      this.trainingResult.textContent = this.matchResult(match.azureScore, match.coralScore);
+    }
+
     const scoringTeam = match.lastGoalTeam?.toUpperCase() ?? 'TEAM';
     if (match.phase === 'goalExplosion') this.announcement.textContent = `${scoringTeam} SCORES // IMPACT WAVE`;
     else if (match.phase === 'replay') this.announcement.textContent = `${scoringTeam} GOAL REPLAY // RMB TO SKIP`;
@@ -199,6 +250,23 @@ export class UIManager {
   dispose(): void {
     this.chatPanel?.dispose();
     this.root.replaceChildren();
+  }
+
+  private async runTrainingAction(
+    action: (() => void | Promise<void>) | undefined,
+    pendingMessage: string,
+  ): Promise<void> {
+    if (!action) return;
+    const buttons = this.root.querySelectorAll<HTMLButtonElement>('[data-training-complete] button');
+    const status = this.root.querySelector<HTMLElement>('[data-training-action-status]');
+    buttons.forEach((button) => { button.disabled = true; });
+    if (status) status.textContent = pendingMessage;
+    try {
+      await action();
+    } catch {
+      buttons.forEach((button) => { button.disabled = false; });
+      if (status) status.textContent = 'KNOWLEDGE SAVE FAILED // TRY AGAIN';
+    }
   }
 
   private setFpsVisible(visible: boolean): void {
@@ -267,6 +335,20 @@ export const formatCarPosition = ({ x, y, z }: Vec3): string => (
   `X ${formatCoordinate(x)} Y ${formatCoordinate(y)} Z ${formatCoordinate(z)}`
 );
 
+export const trainingCompletionMarkup = (): string => `
+  <section class="modal training-complete" data-training-complete hidden aria-label="Bot Lab complete">
+    <div class="modal-card training-complete__card">
+      <p class="eyebrow">LEARNING CYCLE COMPLETE</p>
+      <h1 data-training-result>MATCH COMPLETE</h1>
+      <p class="training-complete__summary">The latest bot observations are ready to be merged into shared knowledge.</p>
+      <div class="training-complete__actions">
+        <button type="button" data-training-restart>RUN ANOTHER 5 MINUTES</button>
+        <button class="leave-match" type="button" data-training-menu>BACK TO MENU</button>
+      </div>
+      <p class="training-complete__status" data-training-action-status aria-live="polite">CHOOSE THE NEXT TEST CYCLE</p>
+    </div>
+  </section>`;
+
 const formatCoordinate = (value: number): string => (
   (Math.abs(value) < 0.005 ? 0 : value).toFixed(2)
 );
@@ -289,3 +371,21 @@ export const playerRosterMarkup = (
 const escapeHtml = (value: string): string => value.replace(/[&<>'"]/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
 })[character] ?? character);
+
+const trainingPanelMarkup = (players: readonly LobbyPlayer[]): string => `
+  <aside class="bot-training-panel" aria-label="Bot learning scores">
+    <header><b>BOT LAB // LIVE LEARNING</b><span data-training-generation>PERSISTENT // GEN 0</span></header>
+    <div class="bot-training-panel__teams">
+      ${(['azure', 'coral'] as const).map((team) => `
+        <section class="bot-training-panel__team bot-training-panel__team--${team}">
+          <h2>${team.toUpperCase()}</h2>
+          ${players.filter((player) => player.team === team).map((player) => `
+            <div class="bot-training-row" data-training-player="${escapeHtml(player.id)}">
+              <b>${escapeHtml(player.name.replace(' [BOT]', ''))}</b>
+              <strong data-training-points>0.0</strong>
+              <small data-training-policy>BALANCED</small>
+              <i data-training-reward>0.00</i>
+            </div>`).join('')}
+        </section>`).join('')}
+    </div>
+  </aside>`;

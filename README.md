@@ -15,6 +15,7 @@ Velocity Pitch is a browser-based rocket car soccer game built with TypeScript, 
 - A 60 Hz simulation and adaptive render resolution targeting 60 FPS.
 - Persistent client preferences for camera distance, field of view, bloom, volume, FPS visibility, car-position visibility, and driver name.
 - Independent FPS and car-position readouts for debugging.
+- A temporary five-minute 3v3 Bot Lab with persistent tactical reinforcement and per-bot reward scores.
 
 ## Requirements
 
@@ -47,10 +48,12 @@ Keep deployment-specific values in an untracked `.env` file. Do not add credenti
 | --- | --- |
 | `VITE_MULTIPLAYER_URL` | Optional public WebSocket endpoint used by the browser. |
 | `VITE_PUBLIC_URL` | Optional public game origin used to build lobby invite links. |
+| `VITE_BOT_KNOWLEDGE_URL` | Optional shared bot-knowledge API URL. Defaults to `/api/bot-knowledge`. |
 | `MULTIPLAYER_HOST` | Bind address for the multiplayer service. |
 | `MULTIPLAYER_PORT` | Listening port for the multiplayer service. |
+| `BOT_KNOWLEDGE_PATH` | Optional JSON file path for shared bot knowledge. Defaults to `data/bot-knowledge.json`. |
 
-Variables prefixed with `VITE_` are bundled into browser code and must never contain secrets. Without browser overrides, multiplayer uses the current origin and the `/ws` path. For production, serve the built client and proxy `/ws` to the multiplayer service over secure WebSockets.
+Variables prefixed with `VITE_` are bundled into browser code and must never contain secrets. Without browser overrides, multiplayer uses the current origin and the `/ws` path. For production, serve the built client and proxy both `/ws` and `/api` to the multiplayer service.
 
 ## Commands
 
@@ -64,6 +67,7 @@ Variables prefixed with `VITE_` are bundled into browser code and must never con
 | `npm run typecheck` | Run TypeScript project checks. |
 | `npm run lint` | Run ESLint. |
 | `npm test` | Run the Vitest suite. |
+| `npm run test:bot-evaluation` | Simulate a five-minute 3v3 bot match, write its metrics, and persist the next knowledge generation. |
 | `npm run build` | Type-check and build the production client into `dist`. |
 
 ## Controls

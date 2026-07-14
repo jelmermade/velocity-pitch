@@ -1,5 +1,5 @@
 import { GameApplication } from './GameApplication';
-import { LobbyScreen } from '../ui/LobbyScreen';
+import { LobbyScreen, type GameLaunch } from '../ui/LobbyScreen';
 import type { StartedLobby } from '../networking/WebSocketLobbyClient';
 
 export const bootstrapGame = async (): Promise<GameApplication> => {
@@ -11,6 +11,10 @@ export const bootstrapGame = async (): Promise<GameApplication> => {
 const startGame = async (root: HTMLElement, resumedLobby: StartedLobby | null = null): Promise<GameApplication> => {
   const lobbyScreen = new LobbyScreen(root);
   const launch = resumedLobby ? await lobbyScreen.resume(resumedLobby) : await lobbyScreen.show();
+  return launchGame(root, launch);
+};
+
+const launchGame = async (root: HTMLElement, launch: GameLaunch): Promise<GameApplication> => {
   let application: GameApplication | null = null;
   const leave = (): void => {
     application?.dispose();
@@ -24,7 +28,21 @@ const startGame = async (root: HTMLElement, resumedLobby: StartedLobby | null = 
     application = null;
     void startGame(root, launch.lobby).catch((error: unknown) => showError(root, error));
   };
-  application = await GameApplication.create(root, launch.lobby, launch.settings, leave, returnToLobby);
+  const restartTraining = (): void => {
+    if (!application || launch.mode !== 'botTraining') return;
+    application.dispose();
+    application = null;
+    void launchGame(root, launch).catch((error: unknown) => showError(root, error));
+  };
+  application = await GameApplication.create(
+    root,
+    launch.lobby,
+    launch.settings,
+    leave,
+    returnToLobby,
+    launch.mode,
+    restartTraining,
+  );
   application.start();
   return application;
 };

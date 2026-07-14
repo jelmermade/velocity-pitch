@@ -5,6 +5,7 @@ import type { GameEventMap } from '../../src/core/events/GameEvents';
 import { GameSimulation } from '../../src/gameplay/simulation/GameSimulation';
 import { NEUTRAL_COMMAND } from '../../src/input/PlayerCommand';
 import { LocalSession } from '../../src/networking/LocalSession';
+import { BotTrainingSession } from '../../src/networking/BotTrainingSession';
 import type { PhysicsWorld } from '../../src/physics/PhysicsWorld';
 import { RapierPhysicsWorld } from '../../src/physics/rapier/RapierPhysicsWorld';
 
@@ -66,5 +67,23 @@ describe('singleplayer bot simulation', () => {
     expect(Object.keys(frame.cars)).toHaveLength(6);
     expect(new Set(positions.map(({ x, z }) => `${x.toFixed(2)}:${z.toFixed(2)}`)).size).toBe(6);
     expect(session.commandsForTick(0, NEUTRAL_COMMAND, frame).size).toBe(6);
+  });
+
+  it('spawns six separate cars for the five-minute 3v3 bot lab', async () => {
+    world = await RapierPhysicsWorld.create();
+    const session = new BotTrainingSession();
+    const simulation = new GameSimulation(
+      world,
+      new EventBus<GameEventMap>(),
+      session.players,
+      session.localPlayerId,
+    );
+
+    const frame = simulation.authoritativeFrame(0);
+    const positions = Object.values(frame.cars).map(({ transform }) => transform.position);
+
+    expect(Object.keys(frame.cars)).toHaveLength(6);
+    expect(new Set(positions.map(({ x, z }) => `${x.toFixed(2)}:${z.toFixed(2)}`)).size).toBe(6);
+    expect(frame.snapshot.match.timeRemaining).toBe(300);
   });
 });

@@ -12,6 +12,7 @@ import { ChatPanel } from './ChatPanel';
 export interface GameLaunch {
   readonly lobby: StartedLobby | null;
   readonly settings: MatchSettings;
+  readonly mode: 'standard' | 'botTraining';
 }
 
 export class LobbyScreen {
@@ -47,6 +48,7 @@ export class LobbyScreen {
           <div class="lobby-actions">
             <button type="button" data-single-player>SINGLE PLAYER</button>
             <button type="button" data-multiplayer>MULTIPLAYER</button>
+            <button class="bot-lab-button" type="button" data-bot-training>3V3 BOT LAB <small>TEMP</small></button>
           </div>
         </section>
       </main>`;
@@ -55,6 +57,9 @@ export class LobbyScreen {
     });
     this.require('[data-single-player]').addEventListener('click', () => {
       this.renderSinglePlayer(resolve);
+    });
+    this.require('[data-bot-training]').addEventListener('click', () => {
+      resolve({ lobby: null, settings: DEFAULT_MATCH_SETTINGS, mode: 'botTraining' });
     });
   }
 
@@ -108,7 +113,7 @@ export class LobbyScreen {
     });
     this.updateSinglePlayerCopy();
     this.require('[data-start-single-player]').addEventListener('click', () => {
-      resolve({ lobby: null, settings: this.matchSettings });
+      resolve({ lobby: null, settings: this.matchSettings, mode: 'standard' });
     });
     this.require('[data-back]').addEventListener('click', () => this.renderEntry(resolve));
   }
@@ -153,7 +158,7 @@ export class LobbyScreen {
     }));
     const started = await client.waitForStart();
     this.clearLobbySubscriptions();
-    resolve({ lobby: started, settings: started.settings });
+    resolve({ lobby: started, settings: started.settings, mode: 'standard' });
   }
 
   private async showLobbyBrowser(resolve: (value: GameLaunch) => void, playerName: string): Promise<void> {

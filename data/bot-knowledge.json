@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "generation": 25,
+  "updatedAt": "2026-07-14T13:17:51.727Z",
+  "roles": {
+    "striker": {
+      "balanced": {
+        "value": 0.006108,
+        "samples": 2680
+      },
+      "press": {
+        "value": 0.007858,
+        "samples": 2642
+      },
+      "rotate": {
+        "value": 0.006948,
+        "samples": 2504
+      }
+    },
+    "defender": {
+      "balanced": {
+        "value": 0.00421,
+        "samples": 1630
+      },
+      "press": {
+        "value": 0.005469,
+        "samples": 1519
+      },
+      "rotate": {
+        "value": 0.004197,
+        "samples": 1679
+      }
+    }
+  }
+}

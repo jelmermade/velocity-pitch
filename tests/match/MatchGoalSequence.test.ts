@@ -70,4 +70,5 @@ describe('MatchController goal sequence', () => {
     expect(match.state().phase).toBe('ended');
     expect(ended).toEqual([{ winner: 'draw' }]);
   });
+
 });

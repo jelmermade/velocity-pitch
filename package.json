@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
+    "test:bot-evaluation": "vitest run --config vitest.evaluation.config.ts",
     "lint": "eslint ."
   },
   "dependencies": {

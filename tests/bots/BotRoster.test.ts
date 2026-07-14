@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fillBotSlots } from '../../src/gameplay/bots/BotRoster';
+import { createBotTrainingRoster, fillBotSlots } from '../../src/gameplay/bots/BotRoster';
 import type { LobbyPlayer } from '../../src/networking/LobbyProtocol';
 
 const host: LobbyPlayer = { id: 'host', name: 'Host', team: 'azure', host: true };
@@ -24,5 +24,14 @@ describe('bot-filled rosters', () => {
     expect(withGuest.map(({ id }) => id)).not.toContain('bot-coral-0');
     expect(withGuest.map(({ id }) => id)).toContain('bot-coral-1');
     expect(withGuest).toHaveLength(4);
+  });
+
+  it('creates six unique bots for the temporary 3v3 training match', () => {
+    const roster = createBotTrainingRoster();
+
+    expect(roster).toHaveLength(6);
+    expect(roster.filter(({ team }) => team === 'azure')).toHaveLength(3);
+    expect(roster.filter(({ team }) => team === 'coral')).toHaveLength(3);
+    expect(new Set(roster.map(({ id }) => id)).size).toBe(6);
   });
 });

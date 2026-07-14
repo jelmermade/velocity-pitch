@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCarPosition, playerRosterMarkup } from '../../src/ui/UIManager';
+import { formatCarPosition, playerRosterMarkup, trainingCompletionMarkup } from '../../src/ui/UIManager';
 
 describe('debug car position', () => {
   it('formats all world axes next to the FPS counter', () => {
@@ -21,5 +21,16 @@ describe('player scoreboard roster', () => {
     expect(markup).toContain('Host &lt;One&gt;');
     expect(markup).toContain('HOST // YOU');
     expect(markup).not.toContain('Guest');
+  });
+});
+
+describe('Bot Lab completion controls', () => {
+  it('offers another five-minute cycle or a return to the menu', () => {
+    const markup = trainingCompletionMarkup();
+
+    expect(markup).toContain('data-training-restart');
+    expect(markup).toContain('RUN ANOTHER 5 MINUTES');
+    expect(markup).toContain('data-training-menu');
+    expect(markup).toContain('BACK TO MENU');
   });
 });

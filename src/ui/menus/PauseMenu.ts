@@ -4,7 +4,7 @@ export class PauseMenu {
   constructor(
     root: HTMLElement,
     actions: {
-      readonly onLeave: () => void;
+      readonly onLeave: () => void | Promise<void>;
       readonly onResetMatch: () => void;
       readonly onStopMatch: () => void;
     },

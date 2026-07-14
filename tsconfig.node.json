@@ -10,5 +10,5 @@
     "noEmit": true,
     "strict": true
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "eslint.config.js", "server/**/*.ts", "src/**/*.ts"]
+  "include": ["vite.config.ts", "vitest.config.ts", "vitest.evaluation.config.ts", "eslint.config.js", "server/**/*.ts", "src/**/*.ts"]
 }

@@ -1,6 +1,7 @@
 import { NEUTRAL_COMMAND, type PlayerCommand } from '../input/PlayerCommand';
 import { RUNTIME_CONFIG } from '../app/RuntimeConfig';
 import { BotController } from '../gameplay/bots/BotController';
+import { BUILT_IN_BOT_KNOWLEDGE, type BotKnowledge } from '../gameplay/bots/BotKnowledge';
 import { botRole } from '../gameplay/bots/BotRoster';
 import type { GameSession } from './GameSession';
 import type { AuthoritativeFrame, LobbyPlayer } from './LobbyProtocol';
@@ -16,14 +17,24 @@ export class NetworkSession implements GameSession {
   private lastGuestInputTick = Number.NEGATIVE_INFINITY;
   private readonly bots: ReadonlyMap<string, BotController>;
 
-  constructor(private readonly lobby: StartedLobby) {
+  constructor(
+    private readonly lobby: StartedLobby,
+    knowledge: BotKnowledge = BUILT_IN_BOT_KNOWLEDGE,
+  ) {
     this.localPlayerId = lobby.playerId;
     this.players = lobby.players;
     this.authoritative = lobby.playerId === lobby.hostId;
     this.bots = new Map(this.authoritative
       ? this.players.filter((player) => player.bot).map((player) => [
           player.id,
-          new BotController(player.id, player.team, botRole(player)),
+          new BotController(
+            player.id,
+            player.team,
+            botRole(player),
+            false,
+            knowledge,
+            this.players.filter(({ team }) => team === player.team).map(({ id }) => id),
+          ),
         ])
       : []);
   }
