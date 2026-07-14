@@ -96,7 +96,7 @@ describe('authoritative multiplayer simulation', () => {
     const match = Reflect.get(simulation, 'match') as MatchController;
     const step = 1 / RUNTIME_CONFIG.physicsHz;
     match.update(3);
-    match.goal('azure', { x: 0, y: 3.75, z: 51 });
+    match.goal('azure', { x: 0, y: 3.75, z: -51 });
     simulation.stopMatch();
 
     simulation.updatePlayers(new Map([
@@ -125,7 +125,7 @@ describe('authoritative multiplayer simulation', () => {
     const match = Reflect.get(simulation, 'match') as MatchController;
     const step = 1 / RUNTIME_CONFIG.physicsHz;
     match.update(3);
-    match.goal('coral', { x: 0, y: 3.75, z: -51 });
+    match.goal('coral', { x: 0, y: 3.75, z: 51 });
     simulation.stopMatch();
 
     simulation.updatePlayers(new Map([

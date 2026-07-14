@@ -13,6 +13,7 @@ export interface ArenaSurface {
 
 export interface GoalDefinition {
   readonly teamScored: 'azure' | 'coral';
+  readonly defendingTeam: 'azure' | 'coral';
   readonly defendingEnd: 'north' | 'south';
   readonly center: Vec3;
 }
@@ -244,6 +245,16 @@ export const ARENA_SURFACES: readonly ArenaSurface[] = Object.freeze([
 ]);
 
 export const GOALS: readonly GoalDefinition[] = Object.freeze([
-  { teamScored: 'azure', defendingEnd: 'north', center: { x: 0, y: ARENA_TUNING.goalHeight / 2, z: ARENA_TUNING.halfLength } },
-  { teamScored: 'coral', defendingEnd: 'south', center: { x: 0, y: ARENA_TUNING.goalHeight / 2, z: -ARENA_TUNING.halfLength } },
+  {
+    teamScored: 'coral',
+    defendingTeam: 'azure',
+    defendingEnd: 'north',
+    center: { x: 0, y: ARENA_TUNING.goalHeight / 2, z: ARENA_TUNING.halfLength },
+  },
+  {
+    teamScored: 'azure',
+    defendingTeam: 'coral',
+    defendingEnd: 'south',
+    center: { x: 0, y: ARENA_TUNING.goalHeight / 2, z: -ARENA_TUNING.halfLength },
+  },
 ]);

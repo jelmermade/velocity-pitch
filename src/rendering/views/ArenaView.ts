@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ARENA_TUNING } from '../../core/config/ArenaTuning';
-import { ARENA_SURFACES } from '../../gameplay/arena/ArenaDefinition';
+import { ARENA_SURFACES, GOALS } from '../../gameplay/arena/ArenaDefinition';
 import { CityBackdropView } from './CityBackdropView';
 import { GlassDomeView } from './GlassDomeView';
 import { GrassFieldView } from './GrassFieldView';
@@ -62,9 +62,10 @@ export class ArenaView {
   }
 
   private addGoalPresentation(): void {
-    for (const zSign of [-1, 1] as const) {
-      const color = zSign > 0 ? 0x2cd9ff : 0xff5b51;
-      const team = zSign > 0 ? 'azure' : 'coral';
+    for (const goal of GOALS) {
+      const zSign = goal.center.z > 0 ? 1 : -1;
+      const team = goal.defendingTeam;
+      const color = team === 'azure' ? 0x2cd9ff : 0xff5b51;
       const frameMaterial = new THREE.MeshStandardMaterial({
         color,
         emissive: color,

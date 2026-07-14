@@ -13,7 +13,7 @@ describe('MatchController goal sequence', () => {
     match.consumeResetRequest();
     match.update(MATCH_TUNING.countdownSeconds);
 
-    const position = { x: 0, y: 3.75, z: 51 };
+    const position = { x: 0, y: 3.75, z: -51 };
     expect(match.goal('azure', position)).toBe(true);
     expect(match.state().phase).toBe('goalExplosion');
     expect(match.winningTeam()).toBe('azure');
@@ -36,7 +36,7 @@ describe('MatchController goal sequence', () => {
   it('reports replay progress while playback advances', () => {
     const match = new MatchController(new EventBus<GameEventMap>());
     match.update(MATCH_TUNING.countdownSeconds);
-    match.goal('coral', { x: 0, y: 3.75, z: -51 });
+    match.goal('coral', { x: 0, y: 3.75, z: 51 });
     match.update(MATCH_TUNING.goalExplosionSeconds);
     match.update(MATCH_TUNING.replaySeconds / 2);
 
@@ -50,7 +50,7 @@ describe('MatchController goal sequence', () => {
     const ended: GameEventMap['matchEnded'][] = [];
     events.on('matchEnded', (event) => ended.push(event));
     match.update(MATCH_TUNING.countdownSeconds);
-    match.goal('azure', { x: 0, y: 3.75, z: 51 });
+    match.goal('azure', { x: 0, y: 3.75, z: -51 });
 
     match.reset();
 
