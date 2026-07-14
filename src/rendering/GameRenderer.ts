@@ -67,11 +67,15 @@ export class GameRenderer {
     window.addEventListener('resize', this.onResize);
   }
 
-  update(snapshot: SimulationSnapshot, carStates?: Readonly<Record<string, CarState>>): void {
+  update(
+    snapshot: SimulationSnapshot,
+    carStates?: Readonly<Record<string, CarState>>,
+    deltaSeconds = 0,
+  ): void {
     this.cars.forEach((view, playerId) => {
       const state = carStates?.[playerId] ?? (playerId === this.localPlayerId ? snapshot.car : undefined);
       view.group.visible = state !== undefined;
-      if (state) view.update(state);
+      if (state) view.update(state, deltaSeconds);
     });
     this.ball.update(snapshot.ball, snapshot.match.phase !== 'ended');
     this.boostPickups.update(snapshot.boostPickups);

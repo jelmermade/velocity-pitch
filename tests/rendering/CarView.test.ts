@@ -39,4 +39,33 @@ describe('car wheel rendering', () => {
     });
     view.dispose();
   });
+
+  it('animates boost flames deterministically from frame delta', () => {
+    const first = new CarView();
+    const second = new CarView();
+    const state: CarState = {
+      transform: {
+        position: { x: 0, y: 0.72, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+      linearVelocity: { x: 0, y: 0, z: 0 },
+      angularVelocity: { x: 0, y: 0, z: 0 },
+      wheels: [],
+      grounded: true,
+      boost: 100,
+      boosting: true,
+    };
+
+    first.update(state, 0.125);
+    second.update(state, 0.125);
+    const firstFlame = first.group.getObjectByName('boost-flame-0');
+    const secondFlame = second.group.getObjectByName('boost-flame-0');
+    expect(firstFlame?.scale.y).toBeCloseTo(secondFlame?.scale.y ?? 0);
+
+    const previousScale = firstFlame?.scale.y ?? 0;
+    first.update(state, 0.125);
+    expect(firstFlame?.scale.y).not.toBeCloseTo(previousScale);
+    first.dispose();
+    second.dispose();
+  });
 });

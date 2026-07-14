@@ -8,6 +8,7 @@ export class CarView {
   readonly group = new THREE.Group();
   private readonly wheels: THREE.Group[] = [];
   private readonly boostFlames: THREE.Mesh[] = [];
+  private animationSeconds = 0;
 
   constructor(team: TeamId = 'azure') {
     const bodyColor = team === 'azure' ? 0x12afbd : 0xd94e47;
@@ -41,14 +42,17 @@ export class CarView {
     this.createBoostFlames();
   }
 
-  update(state: CarState): void {
+  update(state: CarState, deltaSeconds = 0): void {
+    this.animationSeconds += deltaSeconds;
     const { position, rotation } = state.transform;
     this.group.position.set(position.x, position.y, position.z);
     this.group.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
 
     this.boostFlames.forEach((flame, index) => {
       flame.visible = state.boosting;
-      const flicker = state.boosting ? 0.82 + Math.random() * 0.32 : 0;
+      const flicker = state.boosting
+        ? 0.98 + Math.sin(this.animationSeconds * 38 + index * 1.7) * 0.16
+        : 0;
       flame.scale.set(1 + index * 0.04, flicker, 1 + index * 0.04);
     });
 
@@ -140,6 +144,7 @@ export class CarView {
       const flame = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.65, 10), material);
       flame.rotation.x = Math.PI / 2;
       flame.position.set(x, -0.12, 1.76);
+      flame.name = `boost-flame-${this.boostFlames.length}`;
       this.boostFlames.push(flame);
       this.group.add(flame);
     }

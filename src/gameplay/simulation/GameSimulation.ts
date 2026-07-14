@@ -16,7 +16,7 @@ import { GoalExplosionSystem } from '../effects/GoalExplosionSystem';
 import { MatchController } from '../match/MatchController';
 import { carTuningForMatch, DEFAULT_MATCH_SETTINGS, type MatchSettings } from '../match/MatchSettings';
 import { GoalReplayBuffer } from '../replay/GoalReplayBuffer';
-import { interpolateSnapshots } from './SnapshotInterpolator';
+import { interpolateCarState, interpolateSnapshots } from './SnapshotInterpolator';
 import type { SimulationSnapshot } from './SimulationSnapshot';
 
 export class GameSimulation {
@@ -31,6 +31,8 @@ export class GameSimulation {
   private current: SimulationSnapshot;
   private impactCooldown = 0;
   private victoryAnchors: ReadonlyMap<string, Vec3> | null = null;
+  private previousCars = new Map<string, ReturnType<Car['state']>>();
+  private currentCars = new Map<string, ReturnType<Car['state']>>();
 
   constructor(
     private readonly world: PhysicsWorld,
@@ -48,6 +50,8 @@ export class GameSimulation {
     this.world.synchronizeSceneQueries();
     this.current = this.capture();
     this.previous = this.current;
+    this.currentCars = this.captureCars();
+    this.previousCars = this.currentCars;
   }
 
   update(command: PlayerCommand, deltaSeconds: number): void {
@@ -56,6 +60,7 @@ export class GameSimulation {
 
   updatePlayers(commands: ReadonlyMap<string, PlayerCommand>, deltaSeconds: number): void {
     this.previous = this.current;
+    this.previousCars = this.currentCars;
     const localCommand = commands.get(this.localPlayerId) ?? NEUTRAL_COMMAND;
     if (localCommand.togglePause) this.match.togglePause();
     if (localCommand.jumpPressed) this.match.skipReplay();
@@ -83,6 +88,7 @@ export class GameSimulation {
 
     this.tickNumber += 1;
     this.current = this.capture();
+    this.currentCars = this.captureCars();
     if (this.current.match.phase === 'playing' || this.current.match.phase === 'overtime') {
       this.replay.record(this.current);
     }
@@ -95,11 +101,16 @@ export class GameSimulation {
     return replaySnapshot ? { ...replaySnapshot, match: liveSnapshot.match } : liveSnapshot;
   }
 
-  authoritativeFrame(sequence: number): AuthoritativeFrame {
+  authoritativeFrame(sequence: number, alpha = 1): AuthoritativeFrame {
     return {
       sequence,
       snapshot: this.snapshot(1),
-      cars: Object.fromEntries([...this.cars].map(([playerId, car]) => [playerId, car.state()])),
+      cars: Object.fromEntries([...this.currentCars].map(([playerId, state]) => [
+        playerId,
+        this.previousCars.get(playerId)
+          ? interpolateCarState(this.previousCars.get(playerId) as ReturnType<Car['state']>, state, alpha)
+          : state,
+      ])),
     };
   }
 
@@ -122,6 +133,10 @@ export class GameSimulation {
       boostPickups: this.boostPickups.state(),
       match: this.match.state(),
     };
+  }
+
+  private captureCars(): Map<string, ReturnType<Car['state']>> {
+    return new Map([...this.cars].map(([playerId, car]) => [playerId, car.state()]));
   }
 
   private resetActors(): void {

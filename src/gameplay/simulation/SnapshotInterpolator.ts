@@ -9,7 +9,7 @@ export const interpolateSnapshots = (
   alpha: number,
 ): SimulationSnapshot => ({
   tick: current.tick,
-  car: interpolateCar(previous.car, current.car, alpha),
+  car: interpolateCarState(previous.car, current.car, alpha),
   ball: {
     ...current.ball,
     transform: {
@@ -21,12 +21,14 @@ export const interpolateSnapshots = (
   match: current.match,
 });
 
-const interpolateCar = (previous: CarState, current: CarState, alpha: number): CarState => ({
+export const interpolateCarState = (previous: CarState, current: CarState, alpha: number): CarState => ({
   ...current,
   transform: {
     position: lerpVec3(previous.transform.position, current.transform.position, alpha),
     rotation: slerpQuat(previous.transform.rotation, current.transform.rotation, alpha),
   },
+  linearVelocity: lerpVec3(previous.linearVelocity, current.linearVelocity, alpha),
+  angularVelocity: lerpVec3(previous.angularVelocity, current.angularVelocity, alpha),
   wheels: current.wheels.map((wheel, index) => {
     const oldWheel = previous.wheels[index];
     if (!oldWheel) return wheel;

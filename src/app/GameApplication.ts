@@ -146,7 +146,7 @@ export class GameApplication {
       },
       (alpha, deltaSeconds) => {
         const networkFrame = session.authoritative
-          ? simulation.authoritativeFrame(tick)
+          ? simulation.authoritativeFrame(tick, alpha)
           : guestInterpolator.sample(performance.now() / 1000) ?? guestFrame;
         const baseSnapshot = session.authoritative ? simulation.snapshot(alpha) : networkFrame?.snapshot ?? simulation.snapshot(alpha);
         const replaying = baseSnapshot.match.phase === 'replay';
@@ -167,7 +167,7 @@ export class GameApplication {
                 return player !== undefined && (winningTeam === null || player.team === winningTeam);
               }))
             : networkFrame?.cars;
-        renderer.update(snapshot, renderedCars);
+        renderer.update(snapshot, renderedCars, deltaSeconds);
         camera.update(snapshot, deltaSeconds);
         ui.update(snapshot, camera.modeName());
         ui.updateFrameRate(deltaSeconds);
