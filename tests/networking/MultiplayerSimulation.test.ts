@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EventBus } from '../../src/core/events/EventBus';
 import { RUNTIME_CONFIG } from '../../src/app/RuntimeConfig';
 import type { GameEventMap } from '../../src/core/events/GameEvents';
+import { rotateVector } from '../../src/core/math/Quaternion';
 import type { MatchController } from '../../src/gameplay/match/MatchController';
 import { VICTORY_CENTER } from '../../src/gameplay/match/VictoryLineup';
 import { GameSimulation } from '../../src/gameplay/simulation/GameSimulation';
@@ -111,6 +112,10 @@ describe('authoritative multiplayer simulation', () => {
     expect(winner?.transform.position.y).toBeCloseTo(VICTORY_CENTER.y, 2);
     expect(winner?.linearVelocity.x).toBe(0);
     expect(winner?.linearVelocity.z).toBe(0);
+    const winnerForward = winner
+      ? rotateVector(winner.transform.rotation, { x: 0, y: 0, z: -1 })
+      : { x: 0, y: 0, z: 0 };
+    expect(winnerForward.z).toBeGreaterThan(0.99);
   });
 
   it('keeps the solo car at midfield when the other team wins', async () => {

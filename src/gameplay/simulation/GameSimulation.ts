@@ -15,7 +15,7 @@ import { Car, type CarSpawn } from '../car/Car';
 import { GoalExplosionSystem } from '../effects/GoalExplosionSystem';
 import { MatchController } from '../match/MatchController';
 import { carTuningForMatch, DEFAULT_MATCH_SETTINGS, type MatchSettings } from '../match/MatchSettings';
-import { createVictoryLineup } from '../match/VictoryLineup';
+import { createVictoryLineup, VICTORY_ROTATION } from '../match/VictoryLineup';
 import { GoalReplayBuffer } from '../replay/GoalReplayBuffer';
 import { interpolateCarState, interpolateSnapshots } from './SnapshotInterpolator';
 import type { SimulationSnapshot } from './SimulationSnapshot';
@@ -181,7 +181,7 @@ export class GameSimulation {
       if (!anchor) return;
       this.cars.get(player.id)?.teleport({
         position: anchor,
-        rotation: player.team === 'azure' ? { x: 0, y: 0, z: 0, w: 1 } : { x: 0, y: 1, z: 0, w: 0 },
+        rotation: VICTORY_ROTATION,
       });
     });
     this.players.filter((player) => !anchors.has(player.id)).forEach((player, index) => {
