@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatCarPosition, playerRosterMarkup, trainingCompletionMarkup } from '../../src/ui/UIManager';
+import { VEHICLE_CONFIG } from '../../src/core/config/GameplayScale';
+import { botLabTuningMarkup, gameplayConfigJson } from '../../src/ui/BotLabTuningPanel';
 
 describe('debug car position', () => {
   it('formats all world axes next to the FPS counter', () => {
@@ -32,5 +34,27 @@ describe('Bot Lab completion controls', () => {
     expect(markup).toContain('RUN ANOTHER 5 MINUTES');
     expect(markup).toContain('data-training-menu');
     expect(markup).toContain('BACK TO MENU');
+  });
+});
+
+describe('Bot Lab live tuning', () => {
+  it('renders temporary controls and exports a complete gameplay config', () => {
+    const vehicle = { ...VEHICLE_CONFIG, driveTopSpeed: 34, boostTopSpeed: 48 };
+    const markup = botLabTuningMarkup(vehicle);
+    const exported = JSON.parse(gameplayConfigJson(vehicle, { arenaScale: 2.2, ballSize: 1.6 })) as {
+      arenaScale: number;
+      ballSize: number;
+      vehicle: typeof vehicle;
+    };
+
+    expect(markup).toContain('data-bot-lab-tuning-input');
+    expect(markup).toContain('COPY JSON');
+    expect(markup).toContain('name="arenaScale"');
+    expect(markup).toContain('name="ballSize"');
+    expect(markup).toContain('REBUILD BOT LAB');
+    expect(exported.arenaScale).toBe(2.2);
+    expect(exported.ballSize).toBe(1.6);
+    expect(exported.vehicle.driveTopSpeed).toBe(34);
+    expect(exported.vehicle.boostTopSpeed).toBe(48);
   });
 });

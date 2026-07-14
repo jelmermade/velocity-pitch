@@ -30,5 +30,6 @@ export class RapierBody implements PhysicsBody {
   setRotation(rotation: Quat): void { this.raw.setRotation(rotation, true); }
   setLinearVelocity(velocity: Vec3): void { this.raw.setLinvel(velocity, true); }
   setAngularVelocity(velocity: Vec3): void { this.raw.setAngvel(velocity, true); }
+  setEnabled(enabled: boolean): void { this.raw.setEnabled(enabled); }
   wakeUp(): void { this.raw.wakeUp(); }
 }

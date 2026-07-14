@@ -1,10 +1,27 @@
 import { GameApplication } from './GameApplication';
 import { LobbyScreen, type GameLaunch } from '../ui/LobbyScreen';
 import type { StartedLobby } from '../networking/WebSocketLobbyClient';
+import { DEFAULT_MATCH_SETTINGS } from '../gameplay/match/MatchSettings';
+import {
+  clearRuntimeGameplayConfig,
+  readRuntimeGameplayConfig,
+  saveRuntimeGameplayConfig,
+  type GameplayConfig,
+} from '../core/config/GameplayScale';
+
+const BOT_LAB_TUNING_PARAMETER = 'botLabTuning';
 
 export const bootstrapGame = async (): Promise<GameApplication> => {
   const root = document.querySelector<HTMLElement>('#app');
   if (!root) throw new Error('Application mount point #app is missing');
+  const tuningRequested = new URLSearchParams(window.location.search).get(BOT_LAB_TUNING_PARAMETER) === '1';
+  if (tuningRequested && readRuntimeGameplayConfig()) {
+    return launchGame(root, {
+      lobby: null,
+      settings: DEFAULT_MATCH_SETTINGS,
+      mode: 'botTraining',
+    });
+  }
   return startGame(root);
 };
 
@@ -19,6 +36,11 @@ const launchGame = async (root: HTMLElement, launch: GameLaunch): Promise<GameAp
   const leave = (): void => {
     application?.dispose();
     application = null;
+    if (readRuntimeGameplayConfig()) {
+      clearRuntimeGameplayConfig();
+      window.location.assign(window.location.pathname);
+      return;
+    }
     window.history.replaceState({}, '', window.location.pathname);
     void startGame(root).catch((error: unknown) => showError(root, error));
   };
@@ -34,6 +56,16 @@ const launchGame = async (root: HTMLElement, launch: GameLaunch): Promise<GameAp
     application = null;
     void launchGame(root, launch).catch((error: unknown) => showError(root, error));
   };
+  const rebuildTraining = (config: GameplayConfig): void => {
+    if (!application || launch.mode !== 'botTraining') return;
+    saveRuntimeGameplayConfig(config);
+    application.dispose();
+    application = null;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('lobby');
+    url.searchParams.set(BOT_LAB_TUNING_PARAMETER, '1');
+    window.location.assign(url.toString());
+  };
   application = await GameApplication.create(
     root,
     launch.lobby,
@@ -42,6 +74,7 @@ const launchGame = async (root: HTMLElement, launch: GameLaunch): Promise<GameAp
     returnToLobby,
     launch.mode,
     restartTraining,
+    rebuildTraining,
   );
   application.start();
   return application;

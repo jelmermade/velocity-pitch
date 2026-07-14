@@ -6,6 +6,7 @@ import { SettingsMenu } from './menus/SettingsMenu';
 import { PauseMenu } from './menus/PauseMenu';
 import { ChatPanel, type ChatPanelSource } from './ChatPanel';
 import type { BotTrainingState } from '../gameplay/bots/BotTrainingState';
+import { BotLabTuningPanel, type BotLabTuningSource } from './BotLabTuningPanel';
 
 const FPS_STORAGE_KEY = 'velocity-pitch:show-fps';
 const POSITION_STORAGE_KEY = 'velocity-pitch:show-position';
@@ -29,6 +30,7 @@ export class UIManager {
   private readonly pauseMenu: PauseMenu;
   private readonly settingsMenu: SettingsMenu;
   private readonly chatPanel: ChatPanel | null;
+  private readonly botLabTuning: BotLabTuningPanel | null;
   private readonly trainingGeneration: HTMLElement | null;
   private readonly trainingComplete: HTMLElement | null;
   private readonly trainingResult: HTMLElement | null;
@@ -60,6 +62,7 @@ export class UIManager {
       readonly onResetMatch: () => void;
       readonly onStopMatch: () => void;
       readonly chat?: ChatPanelSource;
+      readonly botLabTuning?: BotLabTuningSource;
     },
   ) {
     this.practice = actions.practice ?? false;
@@ -84,6 +87,7 @@ export class UIManager {
           </div>
           <aside class="camera-tag">CAM <b data-camera-mode>BALL</b></aside>
           ${actions.training ? trainingPanelMarkup(actions.players) : ''}
+          ${actions.botLabTuning ? '<div class="bot-lab-tuning-root" data-bot-lab-tuning></div>' : ''}
           <section class="player-scoreboard" data-player-scoreboard hidden aria-label="Match score and players">
             <p class="eyebrow">LIVE MATCH // HOLD TAB</p>
             <header class="player-scoreboard__score">
@@ -163,6 +167,9 @@ export class UIManager {
     });
     this.chatPanel = actions.chat
       ? new ChatPanel(this.require('[data-chat-panel]'), actions.chat, { mode: 'match' })
+      : null;
+    this.botLabTuning = actions.botLabTuning
+      ? new BotLabTuningPanel(this.require('[data-bot-lab-tuning]'), actions.botLabTuning)
       : null;
     this.trainingGeneration = this.root.querySelector('[data-training-generation]');
     this.trainingComplete = this.root.querySelector('[data-training-complete]');
@@ -254,6 +261,7 @@ export class UIManager {
 
   dispose(): void {
     this.chatPanel?.dispose();
+    this.botLabTuning?.dispose();
     this.root.replaceChildren();
   }
 

@@ -19,6 +19,7 @@ export const interpolateSnapshots = (
   },
   boostPickups: current.boostPickups,
   match: current.match,
+  ...(current.demolition ? { demolition: current.demolition } : {}),
 });
 
 export const interpolateCarState = (previous: CarState, current: CarState, alpha: number): CarState => ({

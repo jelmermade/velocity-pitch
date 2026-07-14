@@ -15,7 +15,7 @@ export class GoalExplosionView {
   private readonly particleMaterial: THREE.PointsMaterial;
   private readonly shockwave: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
   private readonly flash = new THREE.PointLight(0xffffff, 0, 28, 2);
-  private readonly unsubscribe: () => void;
+  private readonly unsubscribers: readonly (() => void)[];
   private elapsed: number = EFFECT_DURATION;
 
   constructor(events: EventBus<GameEventMap>) {
@@ -44,7 +44,10 @@ export class GoalExplosionView {
     this.shockwave = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 64), shockwaveMaterial);
     this.group.add(this.particles, this.shockwave, this.flash);
     this.group.visible = false;
-    this.unsubscribe = events.on('goal', ({ team, position }) => this.trigger(team, position));
+    this.unsubscribers = [
+      events.on('goal', ({ team, position }) => this.trigger(team, position, true)),
+      events.on('demolition', ({ victimTeam, position }) => this.trigger(victimTeam, position, false)),
+    ];
   }
 
   update(deltaSeconds: number): void {
@@ -78,14 +81,18 @@ export class GoalExplosionView {
   }
 
   dispose(): void {
-    this.unsubscribe();
+    this.unsubscribers.forEach((unsubscribe) => unsubscribe());
     this.particles.geometry.dispose();
     this.particleMaterial.dispose();
     this.shockwave.geometry.dispose();
     this.shockwave.material.dispose();
   }
 
-  private trigger(team: 'azure' | 'coral', position: { readonly x: number; readonly y: number; readonly z: number }): void {
+  private trigger(
+    team: 'azure' | 'coral',
+    position: { readonly x: number; readonly y: number; readonly z: number },
+    directional: boolean,
+  ): void {
     const color = new THREE.Color(team === 'azure' ? 0x2cd9ff : 0xff685d);
     const inward = team === 'azure' ? -1 : 1;
     this.elapsed = 0;
@@ -94,7 +101,7 @@ export class GoalExplosionView {
     this.shockwave.material.color.copy(color);
     this.flash.color.copy(color);
     this.shockwave.scale.setScalar(0.5);
-    this.group.position.set(position.x, position.y, position.z + inward * 0.45);
+    this.group.position.set(position.x, position.y, position.z + (directional ? inward * 0.45 : 0));
 
     for (let index = 0; index < PARTICLE_COUNT; index += 1) {
       const offset = index * 3;
@@ -102,10 +109,14 @@ export class GoalExplosionView {
       const radialSpeed = 4 + Math.random() * 15;
       this.positions[offset] = (Math.random() - 0.5) * 1.2;
       this.positions[offset + 1] = (Math.random() - 0.5) * 2.6;
-      this.positions[offset + 2] = 0;
+      this.positions[offset + 2] = (Math.random() - 0.5) * (directional ? 0 : 1.2);
       this.velocities[offset] = Math.cos(angle) * radialSpeed;
-      this.velocities[offset + 1] = Math.abs(Math.sin(angle)) * radialSpeed + 2 + Math.random() * 8;
-      this.velocities[offset + 2] = inward * (8 + Math.random() * 18);
+      this.velocities[offset + 1] = directional
+        ? Math.abs(Math.sin(angle)) * radialSpeed + 2 + Math.random() * 8
+        : 3 + Math.random() * 13;
+      this.velocities[offset + 2] = directional
+        ? inward * (8 + Math.random() * 18)
+        : Math.sin(angle) * radialSpeed;
       this.lifetimes[index] = 0.65 + Math.random() * 0.9;
     }
     const positionAttribute = this.particles.geometry.getAttribute('position') as THREE.BufferAttribute;

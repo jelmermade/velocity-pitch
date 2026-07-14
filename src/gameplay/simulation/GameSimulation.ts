@@ -2,6 +2,8 @@ import type { EventBus } from '../../core/events/EventBus';
 import type { GameEventMap } from '../../core/events/GameEvents';
 import { ARENA_TUNING } from '../../core/config/ArenaTuning';
 import { BALL_TUNING } from '../../core/config/BallTuning';
+import type { VehicleConfig } from '../../core/config/GameplayScale';
+import { MATCH_TUNING } from '../../core/config/MatchTuning';
 import { distance, length, sub, type Vec3 } from '../../core/math/Vector3';
 import { NEUTRAL_COMMAND, type PlayerCommand } from '../../input/PlayerCommand';
 import type { AuthoritativeFrame, LobbyPlayer, TeamId } from '../../networking/LobbyProtocol';
@@ -12,13 +14,15 @@ import { detectScoringTeam } from '../arena/GoalVolume';
 import { Ball } from '../ball/Ball';
 import { BoostPickupSystem } from '../boost/BoostPickupSystem';
 import { Car, type CarSpawn } from '../car/Car';
+import { resolveDemolition } from '../car/DemolitionSystem';
 import { GoalExplosionSystem } from '../effects/GoalExplosionSystem';
 import { MatchController } from '../match/MatchController';
 import { carTuningForMatch, DEFAULT_MATCH_SETTINGS, type MatchSettings } from '../match/MatchSettings';
+import type { CarTuning } from '../../core/config/CarTuning';
 import { createVictoryLineup, VICTORY_ROTATION } from '../match/VictoryLineup';
 import { GoalReplayBuffer } from '../replay/GoalReplayBuffer';
 import { interpolateCarState, interpolateSnapshots } from './SnapshotInterpolator';
-import type { SimulationSnapshot } from './SimulationSnapshot';
+import type { DemolitionSnapshot, SimulationSnapshot } from './SimulationSnapshot';
 
 export class GameSimulation {
   private readonly cars = new Map<string, Car>();
@@ -34,6 +38,9 @@ export class GameSimulation {
   private victoryAnchors: ReadonlyMap<string, Vec3> | null = null;
   private previousCars = new Map<string, ReturnType<Car['state']>>();
   private currentCars = new Map<string, ReturnType<Car['state']>>();
+  private carTuning: CarTuning;
+  private demolitionSequence = 0;
+  private lastDemolition: DemolitionSnapshot | null = null;
 
   constructor(
     private readonly world: PhysicsWorld,
@@ -44,12 +51,12 @@ export class GameSimulation {
     freePlay = false,
   ) {
     createArena(world);
-    const carTuning = carTuningForMatch(settings);
+    this.carTuning = carTuningForMatch(settings);
     const teamSlots: Record<TeamId, number> = { azure: 0, coral: 0 };
     this.players.forEach((player) => {
       const teamSlot = teamSlots[player.team];
       teamSlots[player.team] += 1;
-      this.cars.set(player.id, new Car(world, carTuning, spawnFor(player, teamSlot)));
+      this.cars.set(player.id, new Car(world, this.carTuning, spawnFor(player, teamSlot)));
     });
     if (!this.cars.has(this.localPlayerId)) throw new Error('Local player is missing from the simulation roster');
     this.ball = new Ball(world);
@@ -73,6 +80,7 @@ export class GameSimulation {
     if (localCommand.togglePause) this.match.togglePause();
     if (localCommand.jumpPressed) this.match.skipReplay();
     this.match.update(deltaSeconds);
+    const localRespawned = this.match.state().paused ? false : this.advanceRespawns(deltaSeconds);
     if (this.match.consumeResetRequest()) this.resetActors();
 
     if (this.match.state().phase === 'ended') {
@@ -80,24 +88,27 @@ export class GameSimulation {
     } else if (this.match.canSimulate()) {
       const carBefore = this.localCar().state().linearVelocity;
       const ballBefore = this.ball.state().linearVelocity;
+      const carsBefore = this.captureCars();
+      const activePlay = this.match.state().phase === 'playing' || this.match.state().phase === 'overtime';
       this.cars.forEach((car, playerId) => {
         car.update(this.world, commands.get(playerId) ?? NEUTRAL_COMMAND, deltaSeconds);
       });
       this.world.step(deltaSeconds);
+      if (activePlay) this.detectDemolitions(carsBefore);
       this.applyHitPower(ballBefore);
       this.detectImpacts(carBefore, ballBefore, deltaSeconds);
       this.updateBoostPickups(deltaSeconds);
       const scoringTeam = detectScoringTeam(this.ball.state().transform.position);
       if (scoringTeam) this.scoreGoal(scoringTeam);
       this.cars.forEach((car) => {
-        if (car.state().transform.position.y < -4) car.reset();
+        if (!car.isDemolished() && car.state().transform.position.y < -4) car.reset();
       });
     }
 
     this.tickNumber += 1;
     this.current = this.capture();
     this.currentCars = this.captureCars();
-    if (enteredVictoryPresentation) {
+    if (enteredVictoryPresentation || localRespawned) {
       // Victory placement is a teleport, not gameplay movement to interpolate through.
       this.previous = this.current;
       this.previousCars = this.currentCars;
@@ -138,6 +149,14 @@ export class GameSimulation {
 
   stopMatch(): void { this.match.stop(); }
 
+  setVehicleConfig(config: VehicleConfig): void {
+    this.carTuning = carTuningForMatch({
+      ...this.settings,
+      boostRechargePerSecond: config.boostRechargePerSecond,
+    }, config);
+    this.cars.forEach((car) => car.setTuning(this.carTuning));
+  }
+
   dispose(): void {
     this.world.dispose();
   }
@@ -149,11 +168,22 @@ export class GameSimulation {
       ball: this.ball.state(),
       boostPickups: this.boostPickups.state(),
       match: this.match.state(),
+      ...(this.lastDemolition ? { demolition: this.lastDemolition } : {}),
     };
   }
 
   private captureCars(): Map<string, ReturnType<Car['state']>> {
-    return new Map([...this.cars].map(([playerId, car]) => [playerId, car.state()]));
+    return new Map([...this.cars]
+      .filter(([, car]) => !car.isDemolished())
+      .map(([playerId, car]) => [playerId, car.state()]));
+  }
+
+  private advanceRespawns(deltaSeconds: number): boolean {
+    let localRespawned = false;
+    this.cars.forEach((car, playerId) => {
+      if (car.advanceRespawn(deltaSeconds) && playerId === this.localPlayerId) localRespawned = true;
+    });
+    return localRespawned;
   }
 
   private resetActors(): void {
@@ -161,6 +191,7 @@ export class GameSimulation {
     this.ball.reset();
     this.boostPickups.reset();
     this.replay.clear();
+    this.lastDemolition = null;
   }
 
   private updateVictoryPresentation(
@@ -184,6 +215,7 @@ export class GameSimulation {
   }
 
   private beginVictoryPresentation(): void {
+    this.cars.forEach((car) => car.reset());
     const winningTeam = this.match.winningTeam();
     const anchors = createVictoryLineup(this.players, winningTeam);
     this.players.filter((player) => anchors.has(player.id)).forEach((player) => {
@@ -211,17 +243,79 @@ export class GameSimulation {
     const goal = GOALS.find(({ teamScored }) => teamScored === team);
     if (!goal || !this.match.goal(team, goal.center)) return;
     this.replay.freeze(this.capture(), Object.fromEntries(this.captureCars()));
-    this.goalExplosion.trigger(goal.center, [...this.cars.values()]);
+    this.goalExplosion.trigger(goal.center, [...this.cars.values()].filter((car) => !car.isDemolished()));
   }
 
   private updateBoostPickups(deltaSeconds: number): void {
     this.boostPickups.advance(deltaSeconds);
     this.cars.forEach((car) => {
+      if (car.isDemolished()) return;
       const carState = car.state();
       const pickup = this.boostPickups.collect(carState.transform.position, carState.boost);
       if (!pickup) return;
       const amount = car.collectBoost(pickup.amount);
       this.events.emit('boostPickup', { amount, position: pickup.position });
+    });
+  }
+
+  private detectDemolitions(carsBefore: ReadonlyMap<string, ReturnType<Car['state']>>): void {
+    const playerById = new Map(this.players.map((player) => [player.id, player]));
+    const playerByBody = new Map([...this.cars].map(([playerId, car]) => [car.bodyHandle(), playerId]));
+    const processedPairs = new Set<string>();
+    const maximumSpeed = Math.max(
+      this.carTuning.maximumGroundDriveSpeed,
+      this.carTuning.maximumGroundBoostSpeed,
+    );
+
+    this.cars.forEach((car, playerId) => {
+      if (car.isDemolished()) return;
+      car.contactingBodyHandles(this.world).forEach((bodyHandle) => {
+        const otherId = playerByBody.get(bodyHandle);
+        if (!otherId || otherId === playerId) return;
+        const pairKey = [playerId, otherId].sort().join(':');
+        if (processedPairs.has(pairKey)) return;
+        processedPairs.add(pairKey);
+        const other = this.cars.get(otherId);
+        const player = playerById.get(playerId);
+        const otherPlayer = playerById.get(otherId);
+        const state = carsBefore.get(playerId);
+        const otherState = carsBefore.get(otherId);
+        if (!other || other.isDemolished() || !player || !otherPlayer || !state || !otherState) return;
+        const result = resolveDemolition(
+          {
+            playerId,
+            team: player.team,
+            position: state.transform.position,
+            velocity: state.linearVelocity,
+          },
+          {
+            playerId: otherId,
+            team: otherPlayer.team,
+            position: otherState.transform.position,
+            velocity: otherState.linearVelocity,
+          },
+          maximumSpeed,
+          MATCH_TUNING.demolitionSpeedRatio,
+          MATCH_TUNING.demolitionMinimumApproach,
+        );
+        if (!result) return;
+        const victim = this.cars.get(result.victimId);
+        const attackerPlayer = playerById.get(result.attackerId);
+        const victimPlayer = playerById.get(result.victimId);
+        if (!victim || victim.isDemolished() || !attackerPlayer || !victimPlayer) return;
+        const position = victim.state().transform.position;
+        victim.demolish(MATCH_TUNING.demolitionRespawnSeconds);
+        this.demolitionSequence += 1;
+        this.lastDemolition = {
+          sequence: this.demolitionSequence,
+          attackerId: result.attackerId,
+          victimId: result.victimId,
+          attackerTeam: attackerPlayer.team,
+          victimTeam: victimPlayer.team,
+          position,
+        };
+        this.events.emit('demolition', this.lastDemolition);
+      });
     });
   }
 
@@ -247,7 +341,8 @@ export class GameSimulation {
     if (length(sub(ballState.linearVelocity, ballBefore)) < 1.5) return;
     const hitDistance = BALL_TUNING.radius + 2.2;
     const nearCar = [...this.cars.values()].some((car) => (
-      distance(car.state().transform.position, ballState.transform.position) <= hitDistance
+      !car.isDemolished()
+      && distance(car.state().transform.position, ballState.transform.position) <= hitDistance
     ));
     if (nearCar) this.ball.amplifyVelocityChange(ballBefore, this.settings.hitPowerMultiplier);
   }

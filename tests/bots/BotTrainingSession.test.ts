@@ -68,6 +68,34 @@ describe('bot training session', () => {
     await flushing;
     expect(persisted).toBe(true);
   });
+
+  it('rewards a maximum-speed opponent demolition and penalizes the victim', () => {
+    const session = new BotTrainingSession();
+    const before = frameFor(session, 0, 0, 0);
+    const baseAfter = frameFor(session, 1, 0, 0);
+    const after: AuthoritativeFrame = {
+      ...baseAfter,
+      snapshot: {
+        ...baseAfter.snapshot,
+        demolition: {
+          sequence: 1,
+          attackerId: 'bot-azure-0',
+          victimId: 'bot-coral-0',
+          attackerTeam: 'azure',
+          victimTeam: 'coral',
+          position: { x: 0, y: 0.72, z: 0 },
+        },
+      },
+    };
+
+    session.commandsForTick(0, NEUTRAL_COMMAND, before);
+    session.commandsForTick(1, NEUTRAL_COMMAND, after);
+    const attacker = session.trainingState().entries.find(({ playerId }) => playerId === 'bot-azure-0');
+    const victim = session.trainingState().entries.find(({ playerId }) => playerId === 'bot-coral-0');
+
+    expect(attacker?.points).toBeGreaterThan(7);
+    expect(victim?.points).toBeLessThan(0);
+  });
 });
 
 const frameFor = (

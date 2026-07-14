@@ -86,7 +86,7 @@ export class GameRenderer {
     deltaSeconds = 0,
   ): void {
     this.cars.forEach((view, playerId) => {
-      const state = carStates?.[playerId] ?? (playerId === this.localPlayerId ? snapshot.car : undefined);
+      const state = selectCarStateForRender(playerId, this.localPlayerId, snapshot, carStates);
       view.group.visible = state !== undefined;
       if (state) view.update(state, deltaSeconds);
     });
@@ -147,3 +147,14 @@ export class GameRenderer {
     this.bloom.resize(width, height);
   };
 }
+
+export const selectCarStateForRender = (
+  playerId: string,
+  localPlayerId: string,
+  snapshot: SimulationSnapshot,
+  carStates?: Readonly<Record<string, CarState>>,
+): CarState | undefined => (
+  carStates === undefined
+    ? playerId === localPlayerId ? snapshot.car : undefined
+    : carStates[playerId]
+);

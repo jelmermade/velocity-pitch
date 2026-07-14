@@ -148,6 +148,7 @@ export class BotTrainingSession implements GameSession {
     }
     if (previous) {
       this.rewardGoals(previous, frame, rewards);
+      this.rewardDemolition(previous, frame, rewards);
       if (isActive(previous) && isActive(frame)) {
         this.rewardBallProgress(previous, frame, rewards);
         this.rewardApproach(previous, frame, rewards);
@@ -172,6 +173,17 @@ export class BotTrainingSession implements GameSession {
       bot.reward(reward, tick);
     });
     this.previousFrame = frame;
+  }
+
+  private rewardDemolition(
+    previous: AuthoritativeFrame,
+    current: AuthoritativeFrame,
+    rewards: Map<string, number>,
+  ): void {
+    const demolition = current.snapshot.demolition;
+    if (!demolition || demolition.sequence === previous.snapshot.demolition?.sequence) return;
+    addReward(rewards, demolition.attackerId, 8);
+    addReward(rewards, demolition.victimId, -3);
   }
 
   private rewardGoals(

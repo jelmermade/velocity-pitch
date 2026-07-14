@@ -1,4 +1,9 @@
-import { DEFAULT_CAR_TUNING, type CarTuning } from '../../core/config/CarTuning';
+import {
+  carTuningForVehicleConfig,
+  DEFAULT_CAR_TUNING,
+  type CarTuning,
+} from '../../core/config/CarTuning';
+import { VEHICLE_CONFIG, type VehicleConfig } from '../../core/config/GameplayScale';
 
 export interface MatchSettings {
   readonly teamSize: TeamSize;
@@ -49,11 +54,17 @@ export const sanitizeMatchSettings = (value: unknown): MatchSettings => {
   };
 };
 
-export const carTuningForMatch = (settings: MatchSettings): CarTuning => ({
-  ...DEFAULT_CAR_TUNING,
-  boostRecharge: settings.boostRechargePerSecond,
-  boostForce: DEFAULT_CAR_TUNING.boostForce * settings.boostPowerMultiplier,
-});
+export const carTuningForMatch = (
+  settings: MatchSettings,
+  vehicleConfig: VehicleConfig = VEHICLE_CONFIG,
+): CarTuning => {
+  const base = carTuningForVehicleConfig(vehicleConfig);
+  return {
+    ...base,
+    boostRecharge: settings.boostRechargePerSecond,
+    boostForce: base.boostForce * settings.boostPowerMultiplier,
+  };
+};
 
 const sanitize = (
   value: number | undefined,

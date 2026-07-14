@@ -23,10 +23,11 @@ export class Car {
   private readonly controller: CarController;
   private readonly initialWheels;
   private controlState: Pick<CarState, 'wheels' | 'grounded' | 'boost' | 'boosting'>;
+  private respawnSecondsRemaining = 0;
 
   constructor(
     world: PhysicsWorld,
-    private readonly tuning: CarTuning = DEFAULT_CAR_TUNING,
+    private tuning: CarTuning = DEFAULT_CAR_TUNING,
     private readonly spawn: CarSpawn = DEFAULT_CAR_SPAWN,
   ) {
     this.controller = new CarController(tuning);
@@ -53,6 +54,7 @@ export class Car {
   }
 
   update(world: PhysicsWorld, command: PlayerCommand, deltaSeconds: number): void {
+    if (this.isDemolished()) return;
     this.controlState = this.controller.update(world, this.body, command, deltaSeconds);
   }
 
@@ -96,6 +98,38 @@ export class Car {
     return collected;
   }
 
+  setTuning(tuning: CarTuning): void {
+    this.tuning = tuning;
+    this.controller.setTuning(tuning);
+  }
+
+  bodyHandle(): number { return this.body.handle; }
+
+  contactingBodyHandles(world: PhysicsWorld): readonly number[] {
+    return this.isDemolished() ? [] : world.contactingBodyHandles(this.body);
+  }
+
+  isDemolished(): boolean { return this.respawnSecondsRemaining > 0; }
+
+  demolish(respawnSeconds: number): void {
+    if (this.isDemolished()) return;
+    this.respawnSecondsRemaining = respawnSeconds;
+    this.body.setLinearVelocity(ZERO);
+    this.body.setAngularVelocity(ZERO);
+    this.body.clearForces();
+    this.body.clearTorques();
+    this.body.setEnabled(false);
+    this.controlState = { ...this.controlState, grounded: false, boosting: false };
+  }
+
+  advanceRespawn(deltaSeconds: number): boolean {
+    if (!this.isDemolished()) return false;
+    this.respawnSecondsRemaining = Math.max(0, this.respawnSecondsRemaining - deltaSeconds);
+    if (this.respawnSecondsRemaining > 0) return false;
+    this.reset();
+    return true;
+  }
+
   applyImpulse(impulse: Vec3): void {
     this.body.applyImpulse(impulse);
   }
@@ -111,6 +145,8 @@ export class Car {
   }
 
   reset(): void {
+    this.respawnSecondsRemaining = 0;
+    this.body.setEnabled(true);
     this.teleport(this.spawn);
     this.controller.reset();
     this.controlState = { wheels: this.initialWheels, grounded: true, boost: 100, boosting: false };

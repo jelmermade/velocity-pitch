@@ -13,6 +13,7 @@ export interface PhysicsWorld {
     fixedBodiesOnly?: boolean,
   ): RayHit | null;
   synchronizeSceneQueries(): void;
+  contactingBodyHandles(body: PhysicsBody): readonly number[];
   step(deltaSeconds: number): void;
   dispose(): void;
 }

@@ -25,6 +25,7 @@ import { GameLoop } from './GameLoop';
 import { RUNTIME_CONFIG } from './RuntimeConfig';
 import { FreePlaySession } from '../networking/FreePlaySession';
 import type { GameMode } from './GameMode';
+import { VEHICLE_CONFIG, type GameplayConfig } from '../core/config/GameplayScale';
 
 export class GameApplication {
   private constructor(
@@ -48,6 +49,7 @@ export class GameApplication {
     onReturnToLobby: () => void = () => {},
     mode: GameMode = 'standard',
     onRestartTraining: () => void = () => {},
+    onRebuildTraining: (config: GameplayConfig) => void = () => {},
   ): Promise<GameApplication> {
     const events = new EventBus<GameEventMap>();
     const input = new InputManager(window);
@@ -121,6 +123,14 @@ export class GameApplication {
             await session.flushKnowledge?.();
             onRestartTraining();
           },
+          botLabTuning: {
+            initial: VEHICLE_CONFIG,
+            onChange: (config) => simulation.setVehicleConfig(config),
+            onRebuild: async (config) => {
+              await session.flushKnowledge?.();
+              onRebuildTraining(config);
+            },
+          },
         } : {}),
         onResetMatch: () => startedLobby?.client.controlMatch('reset'),
         onStopMatch: () => startedLobby?.client.controlMatch('stop'),
@@ -181,6 +191,9 @@ export class GameApplication {
           if (nextFrame && nextFrame.sequence > lastGuestFrameSequence) {
             const enteredGoalExplosion = nextFrame.snapshot.match.phase === 'goalExplosion'
               && guestFrame?.snapshot.match.phase !== 'goalExplosion';
+            const demolition = nextFrame.snapshot.demolition;
+            const enteredDemolition = demolition
+              && demolition.sequence !== guestFrame?.snapshot.demolition?.sequence;
             guestFrame = nextFrame;
             lastGuestFrameSequence = nextFrame.sequence;
             guestInterpolator.push(nextFrame, performance.now() / 1000);
@@ -194,6 +207,7 @@ export class GameApplication {
                 coral: nextFrame.snapshot.match.coralScore,
               });
             }
+            if (enteredDemolition) events.emit('demolition', demolition);
           }
         }
         tick += 1;

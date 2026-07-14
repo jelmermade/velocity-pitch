@@ -18,5 +18,6 @@ export interface PhysicsBody {
   setRotation(rotation: Quat): void;
   setLinearVelocity(velocity: Vec3): void;
   setAngularVelocity(velocity: Vec3): void;
+  setEnabled(enabled: boolean): void;
   wakeUp(): void;
 }

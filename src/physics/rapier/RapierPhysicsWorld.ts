@@ -73,6 +73,16 @@ export class RapierPhysicsWorld implements PhysicsWorld {
     }
   }
 
+  contactingBodyHandles(body: PhysicsBody): readonly number[] {
+    if (!(body instanceof RapierBody) || body.raw.numColliders() === 0) return [];
+    const handles = new Set<number>();
+    this.world.contactPairsWith(body.raw.collider(0), (other) => {
+      const handle = other.parent()?.handle;
+      if (handle !== undefined) handles.add(handle);
+    });
+    return [...handles];
+  }
+
   step(deltaSeconds: number): void {
     this.world.timestep = deltaSeconds;
     this.world.step();

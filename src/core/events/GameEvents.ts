@@ -11,6 +11,13 @@ export interface GameEventMap {
   readonly carImpact: { readonly intensity: number; readonly position: Vec3 };
   readonly ballImpact: { readonly intensity: number; readonly position: Vec3 };
   readonly boostPickup: { readonly amount: number; readonly position: Vec3 };
+  readonly demolition: {
+    readonly attackerId: string;
+    readonly victimId: string;
+    readonly attackerTeam: 'azure' | 'coral';
+    readonly victimTeam: 'azure' | 'coral';
+    readonly position: Vec3;
+  };
   readonly matchEnded: { readonly winner: 'azure' | 'coral' | 'draw' };
   readonly paused: { readonly paused: boolean };
 }

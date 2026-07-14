@@ -29,6 +29,7 @@ export class AudioManager {
       events.on('carImpact', ({ intensity }) => this.noise(Math.min(0.16, intensity / 80))),
       events.on('ballImpact', ({ intensity }) => this.tone(115 + intensity * 2, 0.045, 'triangle', 0.06)),
       events.on('boostPickup', ({ amount }) => this.tone(amount >= 90 ? 620 : 480, 0.16, 'sine', 0.09)),
+      events.on('demolition', () => this.demolitionExplosion()),
     ];
     window.addEventListener('keydown', this.resume, { once: true });
     window.addEventListener('pointerdown', this.resume, { once: true });
@@ -165,6 +166,11 @@ export class AudioManager {
     oscillator.connect(gain).connect(this.bus.gain);
     oscillator.start(start);
     oscillator.stop(start + 0.52);
+  }
+
+  private demolitionExplosion(): void {
+    this.noise(0.2, 0.28);
+    this.sweep(125, 38, 0.34, 'sawtooth', 0.18);
   }
 
   private noise(gainValue: number, duration = 0.08): void {

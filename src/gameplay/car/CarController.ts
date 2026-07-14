@@ -26,7 +26,9 @@ export class CarController {
   private readonly recovery = new RecoverySystem();
   private ceilingRecoveryRemaining = 0;
 
-  constructor(private readonly tuning: CarTuning) {}
+  constructor(private tuning: CarTuning) {}
+
+  setTuning(tuning: CarTuning): void { this.tuning = tuning; }
 
   update(world: PhysicsWorld, body: PhysicsBody, command: PlayerCommand, deltaSeconds: number): CarControlResult {
     // Rapier user forces persist across steps, so vehicle forces must be rebuilt every tick.

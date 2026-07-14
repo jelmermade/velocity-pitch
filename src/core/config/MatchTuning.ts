@@ -6,4 +6,7 @@ export const MATCH_TUNING = Object.freeze({
   replayHistorySeconds: 3.5,
   goalExplosionRadius: 15,
   goalExplosionImpulse: 12_000,
+  demolitionRespawnSeconds: 3,
+  demolitionSpeedRatio: 0.92,
+  demolitionMinimumApproach: 0.58,
 });

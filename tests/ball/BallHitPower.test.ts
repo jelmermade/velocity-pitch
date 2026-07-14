@@ -35,5 +35,6 @@ class RecordingBody implements PhysicsBody {
   setRotation(): void {}
   setLinearVelocity(velocity: Vec3): void { this.velocity = velocity; }
   setAngularVelocity(): void {}
+  setEnabled(): void {}
   wakeUp(): void {}
 }
