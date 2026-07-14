@@ -71,11 +71,19 @@ export const interpolateFrames = (
   previous: AuthoritativeFrame,
   current: AuthoritativeFrame,
   alpha: number,
-): AuthoritativeFrame => ({
-  sequence: current.sequence,
-  snapshot: interpolateSnapshots(previous.snapshot, current.snapshot, alpha),
-  cars: interpolateCars(previous.cars, current.cars, alpha),
-});
+): AuthoritativeFrame => {
+  const enteredVictoryPresentation = previous.snapshot.match.phase !== 'ended'
+    && current.snapshot.match.phase === 'ended';
+  return {
+    sequence: current.sequence,
+    snapshot: enteredVictoryPresentation
+      ? current.snapshot
+      : interpolateSnapshots(previous.snapshot, current.snapshot, alpha),
+    cars: enteredVictoryPresentation
+      ? current.cars
+      : interpolateCars(previous.cars, current.cars, alpha),
+  };
+};
 
 const interpolateCars = (
   previous: Readonly<Record<string, CarState>>,

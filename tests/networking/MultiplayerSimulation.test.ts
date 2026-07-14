@@ -76,6 +76,8 @@ describe('authoritative multiplayer simulation', () => {
     expect(host?.transform.position.x).toBeCloseTo(-1.7, 4);
     expect(host?.transform.position.z).toBeCloseTo(0, 4);
     expect(host?.transform.position.y).toBeGreaterThan(0.4);
+    expect(host?.linearVelocity.x).toBe(0);
+    expect(host?.linearVelocity.z).toBe(0);
     expect(guest?.transform.position.x).toBeCloseTo(1.7, 4);
     expect(guest?.transform.position.z).toBeCloseTo(0, 4);
     expect(guest?.transform.position.y).toBeGreaterThan(0.4);

@@ -15,6 +15,7 @@ import { Car, type CarSpawn } from '../car/Car';
 import { GoalExplosionSystem } from '../effects/GoalExplosionSystem';
 import { MatchController } from '../match/MatchController';
 import { carTuningForMatch, DEFAULT_MATCH_SETTINGS, type MatchSettings } from '../match/MatchSettings';
+import { createVictoryLineup } from '../match/VictoryLineup';
 import { GoalReplayBuffer } from '../replay/GoalReplayBuffer';
 import { interpolateCarState, interpolateSnapshots } from './SnapshotInterpolator';
 import type { SimulationSnapshot } from './SimulationSnapshot';
@@ -61,6 +62,7 @@ export class GameSimulation {
   updatePlayers(commands: ReadonlyMap<string, PlayerCommand>, deltaSeconds: number): void {
     this.previous = this.current;
     this.previousCars = this.currentCars;
+    let enteredVictoryPresentation = false;
     const localCommand = commands.get(this.localPlayerId) ?? NEUTRAL_COMMAND;
     if (localCommand.togglePause) this.match.togglePause();
     if (localCommand.jumpPressed) this.match.skipReplay();
@@ -68,7 +70,7 @@ export class GameSimulation {
     if (this.match.consumeResetRequest()) this.resetActors();
 
     if (this.match.state().phase === 'ended') {
-      this.updateVictoryPresentation(commands, deltaSeconds);
+      enteredVictoryPresentation = this.updateVictoryPresentation(commands, deltaSeconds);
     } else if (this.match.canSimulate()) {
       const carBefore = this.localCar().state().linearVelocity;
       const ballBefore = this.ball.state().linearVelocity;
@@ -89,6 +91,11 @@ export class GameSimulation {
     this.tickNumber += 1;
     this.current = this.capture();
     this.currentCars = this.captureCars();
+    if (enteredVictoryPresentation) {
+      // Victory placement is a teleport, not gameplay movement to interpolate through.
+      this.previous = this.current;
+      this.previousCars = this.currentCars;
+    }
     if (this.current.match.phase === 'playing' || this.current.match.phase === 'overtime') {
       this.replay.record(this.current);
     }
@@ -149,10 +156,11 @@ export class GameSimulation {
   private updateVictoryPresentation(
     commands: ReadonlyMap<string, PlayerCommand>,
     deltaSeconds: number,
-  ): void {
-    if (!this.victoryAnchors) this.beginVictoryPresentation();
+  ): boolean {
+    const enteredVictoryPresentation = this.victoryAnchors === null;
+    if (enteredVictoryPresentation) this.beginVictoryPresentation();
     const anchors = this.victoryAnchors;
-    if (!anchors) return;
+    if (!anchors) return false;
     anchors.forEach((_anchor, playerId) => {
       this.cars.get(playerId)?.updateVictory(
         this.world,
@@ -162,15 +170,15 @@ export class GameSimulation {
     });
     this.world.step(deltaSeconds);
     anchors.forEach((anchor, playerId) => this.cars.get(playerId)?.anchorHorizontal(anchor));
+    return enteredVictoryPresentation;
   }
 
   private beginVictoryPresentation(): void {
     const winningTeam = this.match.winningTeam();
-    const winners = winningTeam ? this.players.filter(({ team }) => team === winningTeam) : this.players;
-    const anchors = new Map<string, Vec3>();
-    winners.forEach((player, index) => {
-      const anchor = victoryAnchor(index, winners.length);
-      anchors.set(player.id, anchor);
+    const anchors = createVictoryLineup(this.players, winningTeam);
+    this.players.filter((player) => anchors.has(player.id)).forEach((player) => {
+      const anchor = anchors.get(player.id);
+      if (!anchor) return;
       this.cars.get(player.id)?.teleport({
         position: anchor,
         rotation: player.team === 'azure' ? { x: 0, y: 0, z: 0, w: 1 } : { x: 0, y: 1, z: 0, w: 0 },
@@ -252,9 +260,3 @@ const spawnFor = (player: LobbyPlayer, rosterIndex: number): CarSpawn => {
   }
   return { position: { x: -x, y: 0.62, z: -z }, rotation: { x: 0, y: 1, z: 0, w: 0 } };
 };
-
-const victoryAnchor = (index: number, playerCount: number): Vec3 => ({
-  x: (index - (playerCount - 1) / 2) * 3.4,
-  y: 0.72,
-  z: 0,
-});

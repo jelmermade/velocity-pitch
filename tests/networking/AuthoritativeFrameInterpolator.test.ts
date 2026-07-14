@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { CarState } from '../../src/gameplay/car/CarState';
 import type { SimulationSnapshot } from '../../src/gameplay/simulation/SimulationSnapshot';
-import { AuthoritativeFrameInterpolator } from '../../src/networking/AuthoritativeFrameInterpolator';
+import {
+  AuthoritativeFrameInterpolator,
+  interpolateFrames,
+} from '../../src/networking/AuthoritativeFrameInterpolator';
 import type { AuthoritativeFrame } from '../../src/networking/LobbyProtocol';
 
 describe('authoritative frame interpolation', () => {
@@ -33,9 +36,24 @@ describe('authoritative frame interpolation', () => {
     expect(interpolator.sample(0.11)?.cars.guest?.transform.position.z).toBeCloseTo(7.2);
     expect(interpolator.sample(0.2)?.cars.guest?.transform.position.z).toBeCloseTo(12);
   });
+
+  it('snaps cars to their victory positions when the match ends', () => {
+    const playing = frame(6, 24);
+    const ended = frame(12, 0, 'ended');
+
+    const result = interpolateFrames(playing, ended, 0.1);
+
+    expect(result.snapshot.match.phase).toBe('ended');
+    expect(result.cars.host?.transform.position.z).toBe(0);
+    expect(result.cars.guest?.transform.position.z).toBe(0);
+  });
 });
 
-const frame = (sequence: number, z: number): AuthoritativeFrame => {
+const frame = (
+  sequence: number,
+  z: number,
+  phase: SimulationSnapshot['match']['phase'] = 'playing',
+): AuthoritativeFrame => {
   const car = carState(z);
   const snapshot: SimulationSnapshot = {
     tick: sequence,
@@ -47,7 +65,7 @@ const frame = (sequence: number, z: number): AuthoritativeFrame => {
     },
     boostPickups: [],
     match: {
-      phase: 'playing',
+      phase,
       paused: false,
       azureScore: 0,
       coralScore: 0,
