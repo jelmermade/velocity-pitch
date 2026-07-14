@@ -29,6 +29,7 @@ export class CameraController {
   private readonly unsubscribeImpact: () => void;
   private readonly unsubscribeGoal: () => void;
   private replayActive = false;
+  private victoryActive = false;
   private hasAppliedPlayPose = false;
 
   constructor(
@@ -56,8 +57,18 @@ export class CameraController {
 
   update(snapshot: SimulationSnapshot, deltaSeconds: number): void {
     this.replayActive = snapshot.match.phase === 'replay';
+    this.victoryActive = snapshot.match.phase === 'ended';
     if (this.replayActive) {
       this.applyPose(this.replay.pose(snapshot), deltaSeconds, 4.5, 78);
+      return;
+    }
+    if (this.victoryActive) {
+      this.applyPose(
+        this.follow.pose(snapshot.car, this.distance, CAMERA_TUNING.height, CAMERA_TUNING.targetHeight),
+        deltaSeconds,
+        CAMERA_TUNING.stiffness,
+        this.baseFov,
+      );
       return;
     }
     if (this.mode === 'free') {
@@ -95,7 +106,11 @@ export class CameraController {
 
   setDistance(distance: number): void { this.distance = distance; }
   setFieldOfView(fieldOfView: number): void { this.baseFov = fieldOfView; }
-  modeName(): string { return this.replayActive ? 'replay' : this.mode; }
+  modeName(): string {
+    if (this.replayActive) return 'replay';
+    if (this.victoryActive) return 'victory';
+    return this.mode;
+  }
   dispose(): void {
     this.unsubscribeImpact();
     this.unsubscribeGoal();

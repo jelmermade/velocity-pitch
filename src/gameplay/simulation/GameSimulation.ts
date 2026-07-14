@@ -163,11 +163,14 @@ export class GameSimulation {
     });
     this.players.filter((player) => !anchors.has(player.id)).forEach((player, index) => {
       this.cars.get(player.id)?.teleport({
-        position: { x: index * 3, y: -10, z: 0 },
+        position: {
+          x: ARENA_TUNING.halfWidth - 3,
+          y: 0.72,
+          z: (index - 1) * 3.4,
+        },
         rotation: { x: 0, y: 0, z: 0, w: 1 },
       });
     });
-    this.ball.hideForVictory();
     this.victoryAnchors = anchors;
   }
 

@@ -22,6 +22,7 @@ interface ClientConnection {
 
 interface Lobby {
   readonly id: string;
+  readonly name: string;
   readonly hostId: string;
   readonly clients: Map<string, ClientConnection>;
   readonly players: Map<string, LobbyPlayer>;
@@ -56,7 +57,7 @@ const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage
     return;
   }
   if (message.type === 'createLobby') {
-    createLobby(connection, message.playerName, message.settings, message.password);
+    createLobby(connection, message.playerName, message.lobbyName, message.settings, message.password);
     return;
   }
   if (message.type === 'joinLobby') {
@@ -144,6 +145,7 @@ const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage
 const createLobby = (
   connection: ClientConnection,
   playerName: string,
+  lobbyName: string,
   settings: MatchSettings,
   password: string,
 ): void => {
@@ -153,6 +155,7 @@ const createLobby = (
   const player = createPlayer(connection.playerId, playerName, 'azure', true);
   const lobby: Lobby = {
     id: lobbyId,
+    name: sanitizeLobbyName(lobbyName, player.name),
     hostId: connection.playerId,
     clients: new Map([[connection.playerId, connection]]),
     players: new Map([[connection.playerId, player]]),
@@ -165,6 +168,7 @@ const createLobby = (
   send(connection.socket, {
     type: 'lobbyJoined',
     lobbyId,
+    lobbyName: lobby.name,
     playerId: connection.playerId,
     players: [player],
     settings: lobby.settings,
@@ -204,6 +208,7 @@ const joinLobby = (
   send(connection.socket, {
     type: 'lobbyJoined',
     lobbyId,
+    lobbyName: lobby.name,
     playerId: connection.playerId,
     players: [...lobby.players.values()],
     settings: lobby.settings,
@@ -243,6 +248,7 @@ const publicLobbyList = (): readonly LobbySummary[] => [...lobbies.values()]
   .filter((lobby) => !lobby.started && lobby.players.size < maximumPlayers)
   .map((lobby) => ({
     id: lobby.id,
+    name: lobby.name,
     hostName: lobby.players.get(lobby.hostId)?.name ?? 'Driver',
     playerCount: lobby.players.size,
     maximumPlayers,
@@ -252,6 +258,11 @@ const publicLobbyList = (): readonly LobbySummary[] => [...lobbies.values()]
 const normalizePassword = (password: unknown): string => (
   typeof password === 'string' ? password.trim().slice(0, 64) : ''
 );
+
+const sanitizeLobbyName = (value: unknown, hostName: string): string => {
+  if (typeof value !== 'string') return `${hostName}'s Lobby`;
+  return value.trim().slice(0, 30) || `${hostName}'s Lobby`;
+};
 
 const hashPassword = (password: unknown): Buffer | null => {
   const normalized = normalizePassword(password);

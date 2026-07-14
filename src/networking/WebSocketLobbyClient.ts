@@ -24,6 +24,7 @@ export interface StartedLobby {
 
 export class WebSocketLobbyClient {
   private lobbyId = '';
+  private lobbyName = '';
   private playerId = '';
   private players: readonly LobbyPlayer[] = [];
   private hostId = '';
@@ -64,10 +65,11 @@ export class WebSocketLobbyClient {
     });
   }
 
-  createLobby(playerName: string, settings: MatchSettings, password = ''): Promise<void> {
+  createLobby(playerName: string, settings: MatchSettings, password = '', lobbyName = ''): Promise<void> {
     return this.joinRequest({
       type: 'createLobby',
       playerName,
+      lobbyName,
       settings: sanitizeMatchSettings(settings),
       password,
     });
@@ -144,6 +146,7 @@ export class WebSocketLobbyClient {
   }
 
   currentLobbyId(): string { return this.lobbyId; }
+  currentLobbyName(): string { return this.lobbyName; }
   currentPlayers(): readonly LobbyPlayer[] { return this.players; }
   currentMatchSettings(): MatchSettings { return this.matchSettings; }
 
@@ -206,6 +209,7 @@ export class WebSocketLobbyClient {
     }
     if (message.type === 'lobbyJoined') {
       this.lobbyId = message.lobbyId;
+      this.lobbyName = message.lobbyName;
       this.playerId = message.playerId;
       this.setMatchSettings(message.settings);
       this.updateRoster(message.players);
@@ -242,6 +246,7 @@ export class WebSocketLobbyClient {
     }
     if (message.type === 'removedFromLobby') {
       this.lobbyId = '';
+      this.lobbyName = '';
       this.players = [];
       this.removedHandlers.forEach((handler) => handler(message.reason));
       return;

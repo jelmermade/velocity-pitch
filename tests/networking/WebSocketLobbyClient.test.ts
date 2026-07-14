@@ -30,6 +30,7 @@ describe('WebSocketLobbyClient lobby discovery', () => {
     const pending = client.listLobbies();
     const lobbies = [{
       id: 'ABC123',
+      name: 'Friday Finals',
       hostName: 'Host',
       playerCount: 1,
       maximumPlayers: 4,
@@ -46,10 +47,11 @@ describe('WebSocketLobbyClient lobby discovery', () => {
     const Client = await loadClient();
     const creator = await Client.connect('ws://test');
     const creatorSocket = latestSocket(creator);
-    void creator.createLobby('Host', DEFAULT_MATCH_SETTINGS, 'secret');
+    void creator.createLobby('Host', DEFAULT_MATCH_SETTINGS, 'secret', 'Friday Finals');
 
     expect(JSON.parse(creatorSocket.sent[0] ?? '')).toMatchObject({
       type: 'createLobby',
+      lobbyName: 'Friday Finals',
       password: 'secret',
       settings: DEFAULT_MATCH_SETTINGS,
     });
@@ -74,6 +76,7 @@ describe('WebSocketLobbyClient lobby discovery', () => {
     socket.receive({
       type: 'lobbyJoined',
       lobbyId: 'ABC123',
+      lobbyName: "Host's Lobby",
       playerId: 'host',
       players: [{ id: 'host', name: 'Host', team: 'azure', host: true }],
       settings: DEFAULT_MATCH_SETTINGS,

@@ -63,6 +63,7 @@ export class LobbyScreen {
           <p class="eyebrow">HOST SETUP</p>
           <h1>CREATE LOBBY</h1>
           <label>DRIVER NAME<input data-player-name maxlength="20" value="${escapeHtml(playerName)}"></label>
+          <label>LOBBY NAME<input data-lobby-name maxlength="30" value="${escapeHtml(`${playerName.trim() || 'Driver'}'s Lobby`)}"></label>
           <label>LOBBY PASSWORD <small>(OPTIONAL)</small><input data-lobby-password type="password" maxlength="64" autocomplete="new-password" placeholder="Leave blank for a public lobby"></label>
           ${this.matchSettingsMarkup(false)}
           <p class="lobby-status" data-lobby-status>${escapeHtml(this.status)}</p>
@@ -74,10 +75,11 @@ export class LobbyScreen {
       </main>`;
     const name = this.requireInput('[data-player-name]');
     this.bindDriverName(name);
+    const lobbyName = this.requireInput('[data-lobby-name]');
     const password = this.requireInput('[data-lobby-password]');
     this.bindMatchSettingsControls((settings) => { this.matchSettings = settings; });
     this.require('[data-confirm-create]').addEventListener('click', () => {
-      void this.connectAndWait('create', name.value, '', password.value, resolve);
+      void this.connectAndWait('create', name.value, '', password.value, resolve, lobbyName.value);
     });
     this.require('[data-back]').addEventListener('click', () => {
       void this.showLobbyBrowser(resolve, name.value);
@@ -110,13 +112,14 @@ export class LobbyScreen {
     rawCode: string,
     password: string,
     resolve: (value: GameLaunch) => void,
+    lobbyName = '',
   ): Promise<void> {
     const name = rawName.trim() || 'Driver';
     saveDriverName(name);
     this.setStatus('Connecting to multiplayer service...');
     try {
       this.client ??= await WebSocketLobbyClient.connect();
-      if (action === 'create') await this.client.createLobby(name, this.matchSettings, password);
+      if (action === 'create') await this.client.createLobby(name, this.matchSettings, password, lobbyName);
       else await this.client.joinLobby(rawCode, name, password);
       this.matchSettings = this.client.currentMatchSettings();
       this.status = '';
@@ -247,12 +250,13 @@ export class LobbyScreen {
   private renderWaiting(players: readonly LobbyPlayer[], resolve: (value: GameLaunch) => void): void {
     if (!this.client) return;
     const lobbyId = this.client.currentLobbyId();
+    const lobbyName = this.client.currentLobbyName();
     const inviteUrl = `${NETWORK_CONFIG.publicGameUrl}/?lobby=${lobbyId}`;
     this.root.innerHTML = `
       <main class="lobby-screen">
         <section class="lobby-card">
           <p class="eyebrow">LOBBY ${lobbyId}</p>
-          <h1>${this.client.isHost() ? 'YOUR LOBBY' : 'WAITING FOR HOST'}</h1>
+          <h1>${escapeHtml(lobbyName || (this.client.isHost() ? 'YOUR LOBBY' : 'WAITING FOR HOST'))}</h1>
           <div class="lobby-roster">${players.map((player) => playerRow(player, this.client?.isHost() ?? false)).join('')}</div>
           ${this.matchSettingsMarkup(!this.client.isHost())}
           <label>INVITE LINK<input data-invite-url readonly value="${escapeHtml(inviteUrl)}"></label>
@@ -411,7 +415,8 @@ const lobbyBrowserRow = (lobby: LobbySummary, invited: boolean): string => `
   <article class="lobby-browser-row${invited ? ' lobby-browser-row--invited' : ''}">
     <div class="lobby-browser-row__summary">
       <span class="lobby-browser-row__code">${escapeHtml(lobby.id)}</span>
-      <span>${escapeHtml(lobby.hostName)}</span>
+      <span class="lobby-browser-row__name">${escapeHtml(lobby.name)}</span>
+      <span class="lobby-browser-row__host">HOST: ${escapeHtml(lobby.hostName)}</span>
       <b>${lobby.playerCount}/${lobby.maximumPlayers} DRIVERS</b>
       <i>${invited ? 'INVITED' : lobby.passwordProtected ? 'LOCKED' : 'OPEN'}</i>
     </div>
