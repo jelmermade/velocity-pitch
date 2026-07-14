@@ -1,0 +1,32 @@
+import { FixedStepClock } from '../core/time/FixedStepClock';
+
+export class GameLoop {
+  private readonly clock = new FixedStepClock();
+  private animationFrame = 0;
+  private lastRenderSeconds: number | null = null;
+
+  constructor(
+    private readonly fixedUpdate: (deltaSeconds: number) => void,
+    private readonly render: (alpha: number, deltaSeconds: number) => void,
+  ) {}
+
+  start(): void {
+    this.clock.reset();
+    this.animationFrame = requestAnimationFrame(this.frame);
+  }
+
+  stop(): void {
+    cancelAnimationFrame(this.animationFrame);
+    this.animationFrame = 0;
+  }
+
+  private readonly frame = (nowMilliseconds: number): void => {
+    const nowSeconds = nowMilliseconds / 1000;
+    const renderDelta = this.lastRenderSeconds === null ? 0 : Math.min(0.1, nowSeconds - this.lastRenderSeconds);
+    this.lastRenderSeconds = nowSeconds;
+    const result = this.clock.update(nowMilliseconds);
+    for (let index = 0; index < result.steps; index += 1) this.fixedUpdate(this.clock.stepSeconds);
+    this.render(result.alpha, renderDelta);
+    this.animationFrame = requestAnimationFrame(this.frame);
+  };
+}

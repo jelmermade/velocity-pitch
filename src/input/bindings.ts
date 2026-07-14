@@ -1,0 +1,15 @@
+export const BINDINGS = Object.freeze({
+  throttleForward: 'KeyW',
+  throttleReverse: 'KeyS',
+  steerLeft: 'KeyA',
+  steerRight: 'KeyD',
+  boostMouseButton: 0,
+  jumpMouseButton: 2,
+  powerslide: 'ShiftLeft',
+  powerslideAlternate: 'ShiftRight',
+  airRollLeft: 'KeyQ',
+  airRollRight: 'KeyE',
+  ballCamera: 'Space',
+  freeCamera: 'F3',
+  pause: 'Escape',
+});
