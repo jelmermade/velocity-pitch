@@ -15,10 +15,6 @@ Multiplayer development starts the browser client and WebSocket lobby service to
 npm run dev:multiplayer
 ```
 
-Open `http://velocity-pitch.192.168.7.57.xip.made.frl`, create a lobby, and share the generated invite link. The host runs the authoritative 120 Hz Rapier simulation; guests send inputs and receive 20 Hz world snapshots. Lobbies support up to four players split between Azure and Coral.
-
-The matching Nginx configuration is stored at `deploy/nginx/velocity-pitch.conf` and installed at `/home/jelmer/Projects/.nginx/velocity-pitch.conf`. It proxies the application to Vite on port `5173` and WebSocket upgrades at `/ws` to port `8787`.
-
 Network settings can be overridden through environment variables listed in `.env.example`. The browser defaults to same-origin WebSockets, so invite links work through Nginx without embedding an internal port.
 
 Production verification:
