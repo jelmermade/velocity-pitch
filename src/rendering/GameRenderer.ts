@@ -73,7 +73,7 @@ export class GameRenderer {
       view.group.visible = state !== undefined;
       if (state) view.update(state);
     });
-    this.ball.update(snapshot.ball);
+    this.ball.update(snapshot.ball, snapshot.match.phase !== 'ended');
     this.boostPickups.update(snapshot.boostPickups);
   }
 

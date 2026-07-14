@@ -75,8 +75,10 @@ describe('authoritative multiplayer simulation', () => {
     expect(guest).toBeDefined();
     expect(host?.transform.position.x).toBeCloseTo(-1.7, 4);
     expect(host?.transform.position.z).toBeCloseTo(0, 4);
+    expect(host?.transform.position.y).toBeGreaterThan(0.4);
     expect(guest?.transform.position.x).toBeCloseTo(1.7, 4);
     expect(guest?.transform.position.z).toBeCloseTo(0, 4);
+    expect(guest?.transform.position.y).toBeGreaterThan(0.4);
     expect(maximumHeight).toBeGreaterThan(1.2);
     expect(host?.boost).toBeLessThan(100);
     expect(Math.abs(host?.transform.rotation.y ?? 0)).toBeGreaterThan(0.05);

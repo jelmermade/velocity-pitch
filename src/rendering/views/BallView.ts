@@ -21,7 +21,9 @@ export class BallView {
     this.group.add(lattice);
   }
 
-  update(state: BallState): void {
+  update(state: BallState, visible = true): void {
+    this.group.visible = visible;
+    if (!visible) return;
     const { position, rotation } = state.transform;
     this.group.position.set(position.x, position.y, position.z);
     this.group.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);

@@ -159,7 +159,14 @@ export class GameApplication {
           : session.localPlayerId;
         const localCar = replaying ? undefined : networkFrame?.cars[focusPlayerId ?? session.localPlayerId];
         const snapshot = localCar ? { ...baseSnapshot, car: localCar } : baseSnapshot;
-        const renderedCars = replaying ? { [session.localPlayerId]: snapshot.car } : networkFrame?.cars;
+        const renderedCars = replaying
+          ? { [session.localPlayerId]: snapshot.car }
+          : ended && networkFrame
+            ? Object.fromEntries(Object.entries(networkFrame.cars).filter(([playerId]) => {
+                const player = session.players.find(({ id }) => id === playerId);
+                return player !== undefined && (winningTeam === null || player.team === winningTeam);
+              }))
+            : networkFrame?.cars;
         renderer.update(snapshot, renderedCars);
         camera.update(snapshot, deltaSeconds);
         ui.update(snapshot, camera.modeName());
