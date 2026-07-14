@@ -41,6 +41,7 @@ export class GameSimulation {
     private readonly players: readonly LobbyPlayer[] = [{ id: 'local', name: 'Local player', team: 'azure', host: true }],
     private readonly localPlayerId: string = players[0]?.id ?? 'local',
     private readonly settings: MatchSettings = DEFAULT_MATCH_SETTINGS,
+    freePlay = false,
   ) {
     createArena(world);
     const carTuning = carTuningForMatch(settings);
@@ -52,7 +53,7 @@ export class GameSimulation {
     });
     if (!this.cars.has(this.localPlayerId)) throw new Error('Local player is missing from the simulation roster');
     this.ball = new Ball(world);
-    this.match = new MatchController(events);
+    this.match = new MatchController(events, { unlimitedTime: freePlay });
     this.world.synchronizeSceneQueries();
     this.current = this.capture();
     this.previous = this.current;

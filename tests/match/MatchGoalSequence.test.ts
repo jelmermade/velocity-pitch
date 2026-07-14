@@ -71,4 +71,20 @@ describe('MatchController goal sequence', () => {
     expect(ended).toEqual([{ winner: 'draw' }]);
   });
 
+  it('keeps free play running without consuming the match clock', () => {
+    const match = new MatchController(
+      new EventBus<GameEventMap>(),
+      { unlimitedTime: true },
+    );
+    match.update(MATCH_TUNING.countdownSeconds);
+    match.update(MATCH_TUNING.durationSeconds * 3);
+
+    expect(match.state()).toMatchObject({
+      phase: 'playing',
+      timeRemaining: MATCH_TUNING.durationSeconds,
+      paused: false,
+    });
+    expect(match.canSimulate()).toBe(true);
+  });
+
 });

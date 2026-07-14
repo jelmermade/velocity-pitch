@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { ARENA_TUNING } from '../../src/core/config/ArenaTuning';
 import { ArenaView } from '../../src/rendering/views/ArenaView';
 import { ARENA_SURFACES } from '../../src/gameplay/arena/ArenaDefinition';
 import { GLASS_SEAM_OVERLAP } from '../../src/rendering/views/GlassDomeView';
@@ -25,17 +26,31 @@ describe('arena presentation', () => {
     const material = (glass as THREE.InstancedMesh).material;
     expect(material).toBeInstanceOf(THREE.MeshStandardMaterial);
     expect((material as THREE.MeshStandardMaterial).transparent).toBe(true);
-    expect((material as THREE.MeshStandardMaterial).opacity).toBeLessThan(0.3);
-    const glassSurfaces = ARENA_SURFACES.filter(({ kind }) => kind === 'wall' || kind === 'curve' || kind === 'ceiling');
-    const curveIndex = glassSurfaces.findIndex(({ kind }) => kind === 'curve');
-    const curve = glassSurfaces[curveIndex];
+    const glassSurfaces = ARENA_SURFACES.filter(({ glass: rendersGlass, kind }) => (
+      rendersGlass && kind !== 'curve'
+    ));
+    const wallIndex = glassSurfaces.findIndex(({ kind }) => kind === 'wall');
+    const wall = glassSurfaces[wallIndex];
     const matrix = new THREE.Matrix4();
-    (glass as THREE.InstancedMesh).getMatrixAt(curveIndex, matrix);
+    (glass as THREE.InstancedMesh).getMatrixAt(wallIndex, matrix);
     const renderedScale = new THREE.Vector3();
     matrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), renderedScale);
-    expect(curve).toBeDefined();
-    expect(renderedScale.x).toBeCloseTo((curve?.halfExtents.x ?? 0) * 2 + GLASS_SEAM_OVERLAP);
-    expect(renderedScale.z).toBeCloseTo((curve?.halfExtents.z ?? 0) * 2 + GLASS_SEAM_OVERLAP);
+    expect(wall).toBeDefined();
+    expect(renderedScale.x).toBeCloseTo((wall?.halfExtents.x ?? 0) * 2 + GLASS_SEAM_OVERLAP);
+    expect(renderedScale.y).toBeCloseTo((wall?.halfExtents.y ?? 0) * 2);
+    expect(renderedScale.z).toBeCloseTo((wall?.halfExtents.z ?? 0) * 2);
+    expect(glassSurfaces.some(({ kind, position }) => (
+      kind === 'goal' && Math.abs(position.z) > ARENA_TUNING.halfLength
+    ))).toBe(true);
+
+    const curveSurfaces = ARENA_SURFACES.filter(({ glass: rendersGlass, kind }) => (
+      rendersGlass && kind === 'curve'
+    ));
+    const glassCurves = arena.group.getObjectByName('glass-curves');
+    expect(glassCurves).toBeInstanceOf(THREE.Mesh);
+    const curveGeometry = (glassCurves as THREE.Mesh).geometry;
+    expect(curveGeometry.getAttribute('position').count).toBe(curveSurfaces.length * 4);
+    expect(curveGeometry.index?.count).toBe(curveSurfaces.length * 6);
 
     expect(arena.group.getObjectByName('goal-azure-crossbar')).toBeInstanceOf(THREE.Mesh);
     expect(arena.group.getObjectByName('goal-coral-crossbar')).toBeInstanceOf(THREE.Mesh);

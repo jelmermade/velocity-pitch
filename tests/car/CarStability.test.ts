@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createArena } from '../../src/gameplay/arena/Arena';
+import { ARENA_TUNING } from '../../src/core/config/ArenaTuning';
 import { rotateVector } from '../../src/core/math/Quaternion';
 import { DEFAULT_CAR_TUNING } from '../../src/core/config/CarTuning';
 import { Car } from '../../src/gameplay/car/Car';
@@ -138,7 +139,7 @@ describe('Car stability', () => {
     const car = new Car(world);
     const step = 1 / 120;
     car.teleport({
-      position: { x: 0, y: 20, z: 0 },
+      position: { x: 0, y: ARENA_TUNING.height * 0.75, z: 0 },
       rotation: { x: 0, y: 0, z: 0, w: 1 },
     });
 

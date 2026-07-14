@@ -1,3 +1,5 @@
+import { VEHICLE_CONFIG } from './GameplayScale';
+
 export interface CarTuning {
   readonly mass: number;
   readonly halfExtents: { readonly x: number; readonly y: number; readonly z: number };
@@ -15,6 +17,9 @@ export interface CarTuning {
   readonly surfaceAdhesionGraceSeconds: number;
   readonly engineForce: number;
   readonly reverseForce: number;
+  readonly maximumGroundDriveSpeed: number;
+  readonly maximumGroundReverseSpeed: number;
+  readonly groundDriveSpeedFalloffRange: number;
   readonly brakeForce: number;
   readonly brakeToReverseSpeed: number;
   readonly coastDrag: number;
@@ -79,9 +84,12 @@ export const DEFAULT_CAR_TUNING: CarTuning = Object.freeze({
   surfaceGravityCompensation: 0.72,
   surfaceAlignmentTorque: 16_000,
   surfaceAdhesionGraceSeconds: 0.3,
-  engineForce: 9_500,
-  reverseForce: 6_500,
-  brakeForce: 18_000,
+  engineForce: 9_500 * VEHICLE_CONFIG.accelerationMultiplier,
+  reverseForce: 6_500 * VEHICLE_CONFIG.reverseAccelerationMultiplier,
+  maximumGroundDriveSpeed: VEHICLE_CONFIG.driveTopSpeed,
+  maximumGroundReverseSpeed: VEHICLE_CONFIG.reverseTopSpeed,
+  groundDriveSpeedFalloffRange: 4,
+  brakeForce: 18_000 * VEHICLE_CONFIG.brakeMultiplier,
   brakeToReverseSpeed: 0.8,
   coastDrag: 1_200,
   idleBrakeDrag: 10_000,
@@ -91,31 +99,31 @@ export const DEFAULT_CAR_TUNING: CarTuning = Object.freeze({
   powerslideGrip: 1_800,
   maximumLateralForce: 14_000,
   maximumPowerslideForce: 5_500,
-  maximumSteerAngle: 0.265,
+  maximumSteerAngle: 0.265 * VEHICLE_CONFIG.steeringMultiplier,
   powerslideSteerMultiplier: 1.95,
-  groundSteeringTorque: 550,
-  powerslideSteeringTorque: 2_300,
-  boostForce: 24_000,
-  maximumGroundBoostSpeed: 28,
+  groundSteeringTorque: 550 * VEHICLE_CONFIG.steeringMultiplier,
+  powerslideSteeringTorque: 2_300 * VEHICLE_CONFIG.steeringMultiplier,
+  boostForce: 24_000 * VEHICLE_CONFIG.boostAccelerationMultiplier,
+  maximumGroundBoostSpeed: VEHICLE_CONFIG.boostTopSpeed,
   groundBoostSpeedFalloffRange: 4,
-  boostConsumption: 30,
-  boostRecharge: 5,
+  boostConsumption: VEHICLE_CONFIG.boostConsumptionPerSecond,
+  boostRecharge: VEHICLE_CONFIG.boostRechargePerSecond,
   ceilingRecoverySeconds: 0.65,
   ceilingBounceFactor: 0.3,
   minimumCeilingFallSpeed: 2,
-  jumpImpulse: 5_700,
-  dodgeImpulse: 4_500,
-  dodgePitchTorque: 5_200,
-  dodgeRollTorque: 3_400,
+  jumpImpulse: 5_700 * VEHICLE_CONFIG.jumpPowerMultiplier,
+  dodgeImpulse: 4_500 * VEHICLE_CONFIG.dodgePowerMultiplier,
+  dodgePitchTorque: 5_200 * VEHICLE_CONFIG.dodgePowerMultiplier,
+  dodgeRollTorque: 3_400 * VEHICLE_CONFIG.dodgePowerMultiplier,
   dodgeControlLockSeconds: 0.55,
   dodgeAutoLevelSeconds: 1.6,
   dodgeAutoLevelDelaySeconds: 0.28,
   dodgeAutoLevelTorque: 18_000,
   dodgeAutoLevelDamping: 4_200,
-  aerialTorque: 12_000,
-  aerialControlGain: 7_000,
-  maximumAerialAngularSpeed: 5.2,
-  recoveryJumpImpulse: 3_800,
+  aerialTorque: 12_000 * VEHICLE_CONFIG.aerialControlMultiplier,
+  aerialControlGain: 7_000 * VEHICLE_CONFIG.aerialControlMultiplier,
+  maximumAerialAngularSpeed: 5.2 * VEHICLE_CONFIG.aerialControlMultiplier,
+  recoveryJumpImpulse: 3_800 * VEHICLE_CONFIG.jumpPowerMultiplier,
   recoveryControlLockSeconds: 0.75,
   recoveryTorque: 2_200,
   sideRecoveryTorque: 1_100,

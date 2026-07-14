@@ -1,0 +1,19 @@
+{
+  "arenaScale": 1.5,
+  "ballSize": 1.25,
+  "vehicle": {
+    "driveTopSpeed": 22,
+    "reverseTopSpeed": 12,
+    "accelerationMultiplier": 1,
+    "reverseAccelerationMultiplier": 1,
+    "brakeMultiplier": 1,
+    "steeringMultiplier": 1,
+    "boostTopSpeed": 28,
+    "boostAccelerationMultiplier": 1,
+    "boostConsumptionPerSecond": 30,
+    "boostRechargePerSecond": 5,
+    "jumpPowerMultiplier": 1,
+    "dodgePowerMultiplier": 1,
+    "aerialControlMultiplier": 1
+  }
+}

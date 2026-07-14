@@ -8,6 +8,10 @@ import type { MatchPhase } from './MatchPhase';
 import type { MatchState } from './MatchState';
 import { ScoreManager } from './ScoreManager';
 
+export interface MatchControllerOptions {
+  readonly unlimitedTime?: boolean;
+}
+
 export class MatchController {
   private phase: MatchPhase = 'countdown';
   private paused = false;
@@ -19,7 +23,10 @@ export class MatchController {
   private readonly scores = new ScoreManager();
   private readonly kickoff = new KickoffManager();
 
-  constructor(private readonly events: EventBus<GameEventMap>) {}
+  constructor(
+    private readonly events: EventBus<GameEventMap>,
+    private readonly options: MatchControllerOptions = {},
+  ) {}
 
   update(deltaSeconds: number): void {
     if (this.paused || this.phase === 'ended') return;
@@ -44,6 +51,7 @@ export class MatchController {
       return;
     }
     if (this.phase === 'playing') {
+      if (this.options.unlimitedTime) return;
       this.timeRemaining = Math.max(0, this.timeRemaining - deltaSeconds);
       if (this.timeRemaining === 0) this.finishRegulation();
     }

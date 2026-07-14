@@ -80,8 +80,9 @@ export class ArenaView {
         depthWrite: false,
         side: THREE.DoubleSide,
       });
-      const mouthZ = zSign * (ARENA_TUNING.halfLength + 0.12);
-      const centerZ = zSign * (ARENA_TUNING.halfLength + ARENA_TUNING.goalDepth / 2);
+      const goalLine = ARENA_TUNING.halfLength + ARENA_TUNING.goalTransitionDepth;
+      const mouthZ = zSign * (goalLine + 0.12);
+      const centerZ = zSign * (goalLine + ARENA_TUNING.goalDepth / 2);
       const frameThickness = 0.34;
 
       const postGeometry = new THREE.BoxGeometry(frameThickness, ARENA_TUNING.goalHeight, frameThickness);
@@ -127,7 +128,12 @@ export class ArenaView {
 
   private createGoalNet(team: 'azure' | 'coral', color: number, zSign: -1 | 1): THREE.LineSegments {
     const points: number[] = [];
-    const z = zSign * (ARENA_TUNING.halfLength + ARENA_TUNING.goalDepth - 0.42);
+    const z = zSign * (
+      ARENA_TUNING.halfLength
+      + ARENA_TUNING.goalTransitionDepth
+      + ARENA_TUNING.goalDepth
+      - 0.42
+    );
     const columns = 10;
     const rows = 5;
     for (let column = 0; column <= columns; column += 1) {

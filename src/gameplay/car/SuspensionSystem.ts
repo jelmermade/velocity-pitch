@@ -75,14 +75,19 @@ export class SuspensionSystem {
           const driveForce = command.throttle >= 0 ? tuning.engineForce : tuning.reverseForce;
           const requestedDirection = Math.sign(command.throttle);
           const speedInRequestedDirection = speed * requestedDirection;
-          const driveScale = command.boost
-            ? clamp(
-                (tuning.maximumGroundBoostSpeed - speedInRequestedDirection)
-                  / tuning.groundBoostSpeedFalloffRange,
-                0,
-                1,
-              )
-            : 1;
+          const maximumDriveSpeed = command.boost
+            ? tuning.maximumGroundBoostSpeed
+            : requestedDirection < 0
+              ? tuning.maximumGroundReverseSpeed
+              : tuning.maximumGroundDriveSpeed;
+          const falloffRange = command.boost
+            ? tuning.groundBoostSpeedFalloffRange
+            : tuning.groundDriveSpeedFalloffRange;
+          const driveScale = clamp(
+            (maximumDriveSpeed - speedInRequestedDirection) / falloffRange,
+            0,
+            1,
+          );
           body.applyForceAtPoint(
             scale(wheelForward, command.throttle * driveForce * driveScale / 4),
             connection,

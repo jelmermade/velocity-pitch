@@ -8,11 +8,12 @@ import {
   type MatchSettings,
 } from '../gameplay/match/MatchSettings';
 import { ChatPanel } from './ChatPanel';
+import type { GameMode } from '../app/GameMode';
 
 export interface GameLaunch {
   readonly lobby: StartedLobby | null;
   readonly settings: MatchSettings;
-  readonly mode: 'standard' | 'botTraining';
+  readonly mode: GameMode;
 }
 
 export class LobbyScreen {
@@ -47,6 +48,7 @@ export class LobbyScreen {
           <p class="lobby-status" data-lobby-status>${invitedLobby ? `Multiplayer invite for ${escapeHtml(invitedLobby)} detected.` : ''}</p>
           <div class="lobby-actions">
             <button type="button" data-single-player>SINGLE PLAYER</button>
+            <button type="button" data-practice>TRAINING</button>
             <button type="button" data-multiplayer>MULTIPLAYER</button>
             <button class="bot-lab-button" type="button" data-bot-training>3V3 BOT LAB <small>TEMP</small></button>
           </div>
@@ -57,6 +59,9 @@ export class LobbyScreen {
     });
     this.require('[data-single-player]').addEventListener('click', () => {
       this.renderSinglePlayer(resolve);
+    });
+    this.require('[data-practice]').addEventListener('click', () => {
+      resolve({ lobby: null, settings: DEFAULT_MATCH_SETTINGS, mode: 'practice' });
     });
     this.require('[data-bot-training]').addEventListener('click', () => {
       resolve({ lobby: null, settings: DEFAULT_MATCH_SETTINGS, mode: 'botTraining' });

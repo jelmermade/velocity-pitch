@@ -3,9 +3,10 @@ import { ARENA_TUNING } from '../../core/config/ArenaTuning';
 
 const LINE_HEIGHT = 0.032;
 const LINE_WIDTH = 0.22;
-const PITCH_HALF_WIDTH = ARENA_TUNING.halfWidth - 3;
-const PITCH_HALF_LENGTH = ARENA_TUNING.halfLength - 4.5;
-const CENTER_CIRCLE_RADIUS = ARENA_TUNING.halfWidth * 0.18;
+const MARKING_INSET = 3;
+const PITCH_HALF_WIDTH = ARENA_TUNING.halfWidth - MARKING_INSET;
+const PITCH_HALF_LENGTH = ARENA_TUNING.halfLength - MARKING_INSET;
+const CENTER_CIRCLE_RADIUS = ARENA_TUNING.halfWidth * 0.2;
 
 export class GrassFieldView {
   readonly group = new THREE.Group();
@@ -29,8 +30,9 @@ export class GrassFieldView {
       roughness: 0.94,
       metalness: 0,
     });
+    const turfHalfLength = ARENA_TUNING.halfLength + ARENA_TUNING.goalTransitionDepth;
     const turf = new THREE.Mesh(
-      new THREE.PlaneGeometry(ARENA_TUNING.halfWidth * 2, ARENA_TUNING.halfLength * 2),
+      new THREE.PlaneGeometry(ARENA_TUNING.halfWidth * 2, turfHalfLength * 2),
       material,
     );
     turf.name = 'turf';

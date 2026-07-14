@@ -23,6 +23,8 @@ import { GameRenderer } from '../rendering/GameRenderer';
 import { UIManager } from '../ui/UIManager';
 import { GameLoop } from './GameLoop';
 import { RUNTIME_CONFIG } from './RuntimeConfig';
+import { FreePlaySession } from '../networking/FreePlaySession';
+import type { GameMode } from './GameMode';
 
 export class GameApplication {
   private constructor(
@@ -44,27 +46,34 @@ export class GameApplication {
     matchSettings: MatchSettings = startedLobby?.settings ?? DEFAULT_MATCH_SETTINGS,
     onLeave: () => void = () => {},
     onReturnToLobby: () => void = () => {},
-    mode: 'standard' | 'botTraining' = 'standard',
+    mode: GameMode = 'standard',
     onRestartTraining: () => void = () => {},
   ): Promise<GameApplication> {
     const events = new EventBus<GameEventMap>();
     const input = new InputManager(window);
     const world = await RapierPhysicsWorld.create();
     const training = mode === 'botTraining';
-    const botKnowledge = await loadSharedBotKnowledge();
-    const session: GameSession = startedLobby
-      ? new NetworkSession(startedLobby, botKnowledge)
-      : training
-        ? new BotTrainingSession(botKnowledge, (observations) => {
-            return submitSharedBotKnowledge(observations);
-          })
-        : new LocalSession(matchSettings.teamSize, botKnowledge);
+    const practice = mode === 'practice';
+    let session: GameSession;
+    if (practice) {
+      session = new FreePlaySession();
+    } else {
+      const botKnowledge = await loadSharedBotKnowledge();
+      session = startedLobby
+        ? new NetworkSession(startedLobby, botKnowledge)
+        : training
+          ? new BotTrainingSession(botKnowledge, (observations) => {
+              return submitSharedBotKnowledge(observations);
+            })
+          : new LocalSession(matchSettings.teamSize, botKnowledge);
+    }
     const simulation = new GameSimulation(
       world,
       events,
       session.players,
       session.localPlayerId,
       matchSettings,
+      practice,
     );
     const runtime: {
       renderer?: GameRenderer;
@@ -101,6 +110,7 @@ export class GameApplication {
         localPlayerId: training ? '' : session.localPlayerId,
         multiplayer: startedLobby !== null,
         training,
+        practice,
         host: startedLobby !== null && startedLobby.playerId === startedLobby.hostId,
         onLeave: training ? async () => {
           await session.flushKnowledge?.();

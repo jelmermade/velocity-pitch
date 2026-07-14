@@ -38,6 +38,7 @@ export class UIManager {
     readonly policy: HTMLElement;
     readonly reward: HTMLElement;
   }>();
+  private readonly practice: boolean;
   private fpsVisible = false;
   private positionVisible = false;
   private smoothedFrameSeconds = 1 / 60;
@@ -52,6 +53,7 @@ export class UIManager {
       readonly localPlayerId: string;
       readonly multiplayer: boolean;
       readonly training?: boolean;
+      readonly practice?: boolean;
       readonly host: boolean;
       readonly onLeave: () => void | Promise<void>;
       readonly onRestartTraining?: () => void | Promise<void>;
@@ -60,15 +62,16 @@ export class UIManager {
       readonly chat?: ChatPanelSource;
     },
   ) {
+    this.practice = actions.practice ?? false;
     root.innerHTML = `
       <div class="game-shell">
         <div class="render-layer" data-render-layer></div>
         <div class="ui-layer">
           <header class="scoreboard" aria-label="Match scoreboard">
-            <span class="team team--azure">AZURE</span>
-            <strong class="score" data-score>0 <i>:</i> 0</strong>
-            <span class="team team--coral">CORAL</span>
-            <time class="clock" data-clock>5:00</time>
+            <span class="team team--azure">${actions.practice ? 'TRAINING' : 'AZURE'}</span>
+            <strong class="score" data-score>${actions.practice ? '0 GOALS' : '0 <i>:</i> 0'}</strong>
+            <span class="team team--coral">${actions.practice ? 'FREE PLAY' : 'CORAL'}</span>
+            <time class="clock" data-clock>${actions.practice ? 'NO LIMIT' : '5:00'}</time>
           </header>
           <section class="announcement" data-announcement></section>
           <div class="countdown" data-countdown></div>
@@ -117,7 +120,7 @@ export class UIManager {
               <button type="button" data-open-settings>SETTINGS</button>
               ${actions.host ? '<button type="button" data-reset-match>RESET MATCH</button>' : ''}
               ${actions.host ? '<button class="stop-match" type="button" data-stop-match>STOP MATCH</button>' : ''}
-              <button class="leave-match" type="button" data-leave-match>${actions.multiplayer ? 'LEAVE LOBBY' : 'LEAVE MATCH'}</button>
+              <button class="leave-match" type="button" data-leave-match>${actions.multiplayer ? 'LEAVE LOBBY' : actions.practice ? 'LEAVE TRAINING' : 'LEAVE MATCH'}</button>
               <p>Press <kbd>ESC</kbd> to return to the pitch</p>
             </div>
           </section>
@@ -220,10 +223,12 @@ export class UIManager {
 
   update(snapshot: SimulationSnapshot, cameraMode: string): void {
     const { match, car } = snapshot;
-    this.score.innerHTML = `${match.azureScore} <i>:</i> ${match.coralScore}`;
+    this.score.innerHTML = this.practice
+      ? `${match.azureScore} ${match.azureScore === 1 ? 'GOAL' : 'GOALS'}`
+      : `${match.azureScore} <i>:</i> ${match.coralScore}`;
     this.playerScoreboardAzure.textContent = match.azureScore.toString();
     this.playerScoreboardCoral.textContent = match.coralScore.toString();
-    this.clock.textContent = match.overtime ? 'OT' : this.formatTime(match.timeRemaining);
+    this.clock.textContent = this.practice ? 'NO LIMIT' : match.overtime ? 'OT' : this.formatTime(match.timeRemaining);
     this.boostValue.textContent = Math.round(car.boost).toString();
     this.boostFill.style.transform = `scaleX(${car.boost / 100})`;
     this.countdown.textContent = match.countdown > 0 ? match.countdown.toString() : '';

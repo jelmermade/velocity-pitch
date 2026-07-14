@@ -1,3 +1,5 @@
+import { DEFAULT_CAR_TUNING, type CarTuning } from '../../core/config/CarTuning';
+
 export interface MatchSettings {
   readonly teamSize: TeamSize;
   readonly boostRechargePerSecond: number;
@@ -9,7 +11,7 @@ export type TeamSize = 1 | 2 | 3;
 
 export const DEFAULT_MATCH_SETTINGS: MatchSettings = Object.freeze({
   teamSize: 2,
-  boostRechargePerSecond: 5,
+  boostRechargePerSecond: DEFAULT_CAR_TUNING.boostRecharge,
   boostPowerMultiplier: 1,
   hitPowerMultiplier: 1,
 });
@@ -63,4 +65,3 @@ const sanitize = (
   const stepped = Math.round(clamped / limits.step) * limits.step;
   return Number(stepped.toFixed(2));
 };
-import { DEFAULT_CAR_TUNING, type CarTuning } from '../../core/config/CarTuning';

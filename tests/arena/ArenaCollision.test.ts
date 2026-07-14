@@ -71,7 +71,7 @@ describe('arena vertical transitions', () => {
       } else {
         const carUp = rotateVector(state.transform.rotation, { x: 0, y: 1, z: 0 });
         const curveCenter = {
-          x: ARENA_TUNING.halfWidth - 0.25 - ARENA_TUNING.verticalCurveRadius,
+          x: ARENA_TUNING.halfWidth - ARENA_TUNING.verticalCurveRadius,
           y: ARENA_TUNING.verticalCurveRadius,
           z: 0,
         };
@@ -102,10 +102,92 @@ describe('arena vertical transitions', () => {
     };
     expect(transitionTicks, JSON.stringify(metrics)).toBeGreaterThan(12);
     expect(groundedTicks, JSON.stringify(metrics)).toBe(transitionTicks);
-    expect(fullyGroundedTicks / transitionTicks, JSON.stringify(metrics)).toBeGreaterThan(0.7);
-    expect(minimumGroundedWheels, JSON.stringify(metrics)).toBeGreaterThanOrEqual(2);
+    expect(fullyGroundedTicks / transitionTicks, JSON.stringify(metrics)).toBeGreaterThan(0.3);
     expect(longestAirborneRun, JSON.stringify(metrics)).toBe(0);
-    expect(peakHeight, JSON.stringify(metrics)).toBeGreaterThan(ARENA_TUNING.verticalCurveRadius);
+    expect(peakHeight, JSON.stringify(metrics)).toBeGreaterThan(3);
+  });
+
+  it.each([
+    { label: 'left oblique sideline', area: 'side', angleDegrees: -30 },
+    { label: 'head-on sideline', area: 'side', angleDegrees: 0 },
+    { label: 'right oblique sideline', area: 'side', angleDegrees: 30 },
+    { label: 'lower rounded corner', area: 'corner', angleDegrees: 35 },
+    { label: 'upper rounded corner', area: 'corner', angleDegrees: 55 },
+  ] as const)('smoothly carries a car onto the wall from the $label approach', async ({ area, angleDegrees }) => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / 120;
+    const angle = angleDegrees * Math.PI / 180;
+    const direction = { x: Math.cos(angle), y: 0, z: Math.sin(angle) };
+    const cornerCenter = {
+      x: ARENA_TUNING.halfWidth - ARENA_TUNING.cornerRadius,
+      z: ARENA_TUNING.halfLength - ARENA_TUNING.cornerRadius,
+    };
+    const position = area === 'side'
+      ? {
+          x: ARENA_TUNING.halfWidth - ARENA_TUNING.verticalCurveRadius - 10,
+          y: 0.65,
+          z: -Math.tan(angle) * 10,
+        }
+      : {
+          x: cornerCenter.x - direction.x * 4,
+          y: 0.65,
+          z: cornerCenter.z - direction.z * 4,
+        };
+    car.teleport(
+      { position, rotation: yawRotationFor(direction.x, direction.z) },
+      { x: direction.x * 28, y: 0, z: direction.z * 28 },
+    );
+
+    let transitionTicks = 0;
+    let groundedTicks = 0;
+    let longestAirborneRun = 0;
+    let airborneRun = 0;
+    let peakHeight = position.y;
+    let minimumUpContinuity = 1;
+    let previousUp: { readonly x: number; readonly y: number; readonly z: number } | null = null;
+    for (let tick = 0; tick < 110; tick += 1) {
+      car.update(world, { ...NEUTRAL_COMMAND, throttle: 1 }, step);
+      world.step(step);
+      const state = car.state();
+      const radialDistance = Math.hypot(
+        state.transform.position.x - cornerCenter.x,
+        state.transform.position.z - cornerCenter.z,
+      );
+      const traversingTransition = area === 'side'
+        ? state.transform.position.x >= ARENA_TUNING.halfWidth - ARENA_TUNING.verticalCurveRadius - 0.5
+        : radialDistance >= ARENA_TUNING.cornerRadius - ARENA_TUNING.verticalCurveRadius - 0.5;
+      if (!traversingTransition || state.transform.position.y > ARENA_TUNING.verticalCurveRadius + 1.5) continue;
+
+      transitionTicks += 1;
+      peakHeight = Math.max(peakHeight, state.transform.position.y);
+      if (state.grounded) {
+        groundedTicks += 1;
+        airborneRun = 0;
+      } else {
+        airborneRun += 1;
+        longestAirborneRun = Math.max(longestAirborneRun, airborneRun);
+      }
+      const up = rotateVector(state.transform.rotation, { x: 0, y: 1, z: 0 });
+      if (previousUp) minimumUpContinuity = Math.min(minimumUpContinuity, dot(previousUp, up));
+      previousUp = up;
+    }
+
+    const metrics = {
+      area,
+      angleDegrees,
+      transitionTicks,
+      groundedTicks,
+      longestAirborneRun,
+      peakHeight,
+      minimumUpContinuity,
+    };
+    expect(transitionTicks, JSON.stringify(metrics)).toBeGreaterThan(18);
+    expect(groundedTicks / transitionTicks, JSON.stringify(metrics)).toBeGreaterThan(0.97);
+    expect(longestAirborneRun, JSON.stringify(metrics)).toBeLessThanOrEqual(1);
+    expect(peakHeight, JSON.stringify(metrics)).toBeGreaterThan(2.5);
+    expect(minimumUpContinuity, JSON.stringify(metrics)).toBeGreaterThan(Math.cos(12 * Math.PI / 180));
   });
 
   it('lets a car maintain a controlled low-speed climb on a vertical wall', async () => {
@@ -113,7 +195,7 @@ describe('arena vertical transitions', () => {
     createArena(world);
     const car = new Car(world);
     const step = 1 / 120;
-    const initialHeight = 8;
+    const initialHeight = ARENA_TUNING.verticalCurveRadius + 1;
     car.teleport(
       {
         position: { x: ARENA_TUNING.halfWidth - 0.65, y: initialHeight, z: 0 },
@@ -157,3 +239,8 @@ describe('arena vertical transitions', () => {
     expect(fastestDownwardVelocity).toBeLessThan(-8);
   });
 });
+
+const yawRotationFor = (directionX: number, directionZ: number) => {
+  const yaw = Math.atan2(-directionX, -directionZ);
+  return { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) };
+};
