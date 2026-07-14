@@ -259,10 +259,14 @@ export class LobbyScreen {
           <h1>${escapeHtml(lobbyName || (this.client.isHost() ? 'YOUR LOBBY' : 'WAITING FOR HOST'))}</h1>
           <div class="lobby-roster">${players.map((player) => playerRow(player, this.client?.isHost() ?? false)).join('')}</div>
           ${this.matchSettingsMarkup(!this.client.isHost())}
-          <label>INVITE LINK<input data-invite-url readonly value="${escapeHtml(inviteUrl)}"></label>
+          <label>INVITE LINK
+            <span class="invite-link-field">
+              <input data-invite-url readonly value="${escapeHtml(inviteUrl)}">
+              <button type="button" data-copy-invite aria-label="Copy invite link">COPY</button>
+            </span>
+          </label>
           <p class="lobby-status" data-lobby-status>${escapeHtml(this.status)}</p>
           <div class="lobby-actions">
-            <button type="button" data-copy-invite>COPY INVITE</button>
             ${this.client.isHost() ? '<button type="button" data-start-match>START MATCH</button>' : ''}
             <button class="leave-match" type="button" data-leave-waiting>LEAVE LOBBY</button>
           </div>

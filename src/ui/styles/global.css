@@ -127,6 +127,12 @@ kbd { border: 1px solid #577079; padding: 0.12rem 0.35rem; color: #dfffff; }
   text-transform: none;
 }
 .lobby-card input:focus { border-color: var(--azure); box-shadow: 0 0 0 2px rgba(44, 217, 255, 0.12); }
+.invite-link-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; margin-top: 0.45rem; border: 1px solid #355e67; background: rgba(6, 29, 37, 0.88); }
+.invite-link-field:focus-within { border-color: var(--azure); box-shadow: 0 0 0 2px rgba(44, 217, 255, 0.12); }
+.lobby-card .invite-link-field input { min-width: 0; margin: 0; border: 0; background: transparent; }
+.lobby-card .invite-link-field input:focus { border: 0; box-shadow: none; }
+.invite-link-field button { border: 0; border-left: 1px solid #355e67; padding: 0.65rem 1rem; color: var(--azure); background: rgba(44, 217, 255, 0.08); }
+.invite-link-field button:hover { background: rgba(44, 217, 255, 0.18); }
 .lobby-actions { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 1.4rem; }
 .lobby-actions button { flex: 1 1 9rem; }
 .lobby-status { min-height: 1.4rem; color: #ffb25c; font-size: 0.78rem; }
