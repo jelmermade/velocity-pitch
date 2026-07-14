@@ -125,10 +125,14 @@ export class UIManager {
     this.pauseMenu.setVisible(match.paused);
     if (!match.paused) this.settingsMenu.hide();
 
-    if (match.phase === 'goalExplosion') this.announcement.textContent = 'GOAL // IMPACT WAVE';
-    else if (match.phase === 'replay') this.announcement.textContent = 'GOAL REPLAY // RMB TO SKIP';
+    const scoringTeam = match.lastGoalTeam?.toUpperCase() ?? 'TEAM';
+    if (match.phase === 'goalExplosion') this.announcement.textContent = `${scoringTeam} SCORES // IMPACT WAVE`;
+    else if (match.phase === 'replay') this.announcement.textContent = `${scoringTeam} GOAL REPLAY // RMB TO SKIP`;
     else if (match.phase === 'overtime') this.announcement.textContent = 'OVERTIME // NEXT GOAL WINS';
-    else if (match.phase === 'ended') this.announcement.textContent = 'MATCH COMPLETE';
+    else if (match.phase === 'ended') this.announcement.textContent = this.matchResult(
+      match.azureScore,
+      match.coralScore,
+    );
     else this.announcement.textContent = '';
   }
 
@@ -167,5 +171,12 @@ export class UIManager {
     const minutes = Math.floor(seconds / 60);
     const remainder = Math.ceil(seconds % 60).toString().padStart(2, '0');
     return `${minutes}:${remainder}`;
+  }
+
+  private matchResult(azureScore: number, coralScore: number): string {
+    if (azureScore === coralScore) return `DRAW // ${azureScore} GOALS EACH`;
+    const winner = azureScore > coralScore ? 'AZURE' : 'CORAL';
+    const goals = Math.max(azureScore, coralScore);
+    return `${winner} WINS // ${goals} ${goals === 1 ? 'GOAL' : 'GOALS'}`;
   }
 }
