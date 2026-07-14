@@ -92,9 +92,10 @@ export class LobbyScreen {
         <section class="lobby-card">
           <p class="eyebrow">SOLO GARAGE</p>
           <h1>SINGLE PLAYER</h1>
+          <p class="lobby-status">2V2 // DRIVER + 3 BOTS</p>
           ${this.matchSettingsMarkup(false)}
           <div class="lobby-actions">
-            <button type="button" data-start-single-player>START MATCH</button>
+            <button type="button" data-start-single-player>START 2V2 MATCH</button>
             <button type="button" data-back>BACK</button>
           </div>
         </section>

@@ -111,7 +111,8 @@ export class GameApplication {
     const loop = new GameLoop(
       (deltaSeconds) => {
         const localCommand = input.sample();
-        const commands = session.commandsForTick(tick, localCommand);
+        const observedFrame = session instanceof LocalSession ? simulation.authoritativeFrame(tick) : undefined;
+        const commands = session.commandsForTick(tick, localCommand, observedFrame);
         if (localCommand.toggleFpsCounter) ui.toggleFpsCounter();
         camera.handleCommand(localCommand);
         if (session.authoritative) {
