@@ -63,7 +63,7 @@ export class InputManager {
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!this.held.has(event.code)) this.pressed.add(event.code);
     this.held.add(event.code);
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
+    if (['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {

@@ -6,6 +6,7 @@ import { GameSimulation } from '../gameplay/simulation/GameSimulation';
 import { DEFAULT_MATCH_SETTINGS, type MatchSettings } from '../gameplay/match/MatchSettings';
 import { createVictoryLineup, selectVictoryCars } from '../gameplay/match/VictoryLineup';
 import { InputManager } from '../input/InputManager';
+import { BINDINGS } from '../input/bindings';
 import { LocalSession } from '../networking/LocalSession';
 import { NetworkSession } from '../networking/NetworkSession';
 import type { StartedLobby } from '../networking/WebSocketLobbyClient';
@@ -77,6 +78,8 @@ export class GameApplication {
         },
       },
       {
+        players: session.players,
+        localPlayerId: session.localPlayerId,
         multiplayer: startedLobby !== null,
         host: startedLobby !== null && startedLobby.playerId === startedLobby.hostId,
         onLeave,
@@ -169,6 +172,7 @@ export class GameApplication {
         renderer.update(snapshot, renderedCars, deltaSeconds);
         camera.update(snapshot, deltaSeconds);
         ui.update(snapshot, camera.modeName());
+        ui.setPlayerScoreboardVisible(input.isDown(BINDINGS.playerScoreboard) && !snapshot.match.paused);
         ui.updateFrameRate(deltaSeconds, snapshot.car.transform.position);
         renderer.render(deltaSeconds);
       },

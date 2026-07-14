@@ -1,5 +1,6 @@
 import type { SimulationSnapshot } from '../gameplay/simulation/SimulationSnapshot';
 import type { Vec3 } from '../core/math/Vector3';
+import type { LobbyPlayer, TeamId } from '../networking/LobbyProtocol';
 import type { SettingsHandlers } from './menus/SettingsMenu';
 import { SettingsMenu } from './menus/SettingsMenu';
 import { PauseMenu } from './menus/PauseMenu';
@@ -18,6 +19,9 @@ export class UIManager {
   private readonly fpsCounter: HTMLElement;
   private readonly fpsValue: HTMLElement;
   private readonly carPosition: HTMLElement;
+  private readonly playerScoreboard: HTMLElement;
+  private readonly playerScoreboardAzure: HTMLElement;
+  private readonly playerScoreboardCoral: HTMLElement;
   private readonly pauseMenu: PauseMenu;
   private readonly settingsMenu: SettingsMenu;
   private fpsVisible = false;
@@ -28,6 +32,8 @@ export class UIManager {
     private readonly root: HTMLElement,
     settings: Omit<SettingsHandlers, 'onShowFps'>,
     actions: {
+      readonly players: readonly LobbyPlayer[];
+      readonly localPlayerId: string;
       readonly multiplayer: boolean;
       readonly host: boolean;
       readonly onLeave: () => void;
@@ -52,11 +58,30 @@ export class UIManager {
             <span>FPS <b data-fps-value>60</b></span>
             <span>POS <b data-car-position>X 0.00 Y 0.00 Z 0.00</b></span>
           </aside>
+          <section class="player-scoreboard" data-player-scoreboard hidden aria-label="Match score and players">
+            <p class="eyebrow">LIVE MATCH // HOLD TAB</p>
+            <header class="player-scoreboard__score">
+              <span class="player-scoreboard__azure">AZURE <b data-player-score-azure>0</b></span>
+              <i>:</i>
+              <span class="player-scoreboard__coral"><b data-player-score-coral>0</b> CORAL</span>
+            </header>
+            <div class="player-scoreboard__teams">
+              <article class="player-scoreboard__team player-scoreboard__team--azure">
+                <h2>AZURE DRIVERS</h2>
+                ${playerRosterMarkup(actions.players, 'azure', actions.localPlayerId)}
+              </article>
+              <article class="player-scoreboard__team player-scoreboard__team--coral">
+                <h2>CORAL DRIVERS</h2>
+                ${playerRosterMarkup(actions.players, 'coral', actions.localPlayerId)}
+              </article>
+            </div>
+          </section>
           <aside class="controls-hint">
             <span><b>WASD</b> DRIVE / AIR</span><span><b>RMB</b> JUMP + FLIP</span>
             <span><b>LMB</b> BOOST</span><span><b>SHIFT</b> SLIDE</span>
             <span><b>Q E</b> AIR ROLL</span><span><b>SPACE</b> BALL CAM</span>
-            <span><b>F2</b> FPS</span><span><b>F3</b> FREE CAM</span>
+            <span><b>TAB</b> SCORE + PLAYERS</span><span><b>F2</b> FPS</span>
+            <span><b>F3</b> FREE CAM</span>
           </aside>
           <div class="boost-gauge" aria-label="Boost">
             <span class="boost-label">BOOST</span>
@@ -99,6 +124,9 @@ export class UIManager {
     this.fpsCounter = this.require('[data-fps-counter]');
     this.fpsValue = this.require('[data-fps-value]');
     this.carPosition = this.require('[data-car-position]');
+    this.playerScoreboard = this.require('[data-player-scoreboard]');
+    this.playerScoreboardAzure = this.require('[data-player-score-azure]');
+    this.playerScoreboardCoral = this.require('[data-player-score-coral]');
     this.pauseMenu = new PauseMenu(root, actions);
     this.settingsMenu = new SettingsMenu(root, {
       ...settings,
@@ -110,6 +138,10 @@ export class UIManager {
   renderContainer(): HTMLElement { return this.hud; }
 
   toggleFpsCounter(): void { this.setFpsVisible(!this.fpsVisible); }
+
+  setPlayerScoreboardVisible(visible: boolean): void {
+    this.playerScoreboard.hidden = !visible;
+  }
 
   updateFrameRate(deltaSeconds: number, position: Vec3): void {
     if (!this.fpsVisible || deltaSeconds <= 0) return;
@@ -125,6 +157,8 @@ export class UIManager {
   update(snapshot: SimulationSnapshot, cameraMode: string): void {
     const { match, car } = snapshot;
     this.score.innerHTML = `${match.azureScore} <i>:</i> ${match.coralScore}`;
+    this.playerScoreboardAzure.textContent = match.azureScore.toString();
+    this.playerScoreboardCoral.textContent = match.coralScore.toString();
     this.clock.textContent = match.overtime ? 'OT' : this.formatTime(match.timeRemaining);
     this.boostValue.textContent = Math.round(car.boost).toString();
     this.boostFill.style.transform = `scaleX(${car.boost / 100})`;
@@ -196,3 +230,20 @@ export const formatCarPosition = ({ x, y, z }: Vec3): string => (
 const formatCoordinate = (value: number): string => (
   (Math.abs(value) < 0.005 ? 0 : value).toFixed(2)
 );
+
+export const playerRosterMarkup = (
+  players: readonly LobbyPlayer[],
+  team: TeamId,
+  localPlayerId: string,
+): string => {
+  const teamPlayers = players.filter((player) => player.team === team);
+  if (teamPlayers.length === 0) return '<p class="player-scoreboard__empty">NO DRIVERS</p>';
+  return teamPlayers.map((player) => {
+    const markers = [player.host ? 'HOST' : '', player.id === localPlayerId ? 'YOU' : ''].filter(Boolean).join(' // ');
+    return `<div class="player-scoreboard__player"><span>${escapeHtml(player.name)}</span><small>${markers}</small></div>`;
+  }).join('');
+};
+
+const escapeHtml = (value: string): string => value.replace(/[&<>'"]/g, (character) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
+})[character] ?? character);

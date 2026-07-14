@@ -55,6 +55,37 @@ canvas { display: block; width: 100%; height: 100%; }
 .camera-tag b { color: var(--acid); }
 .fps-counter { position: absolute; top: 2.65rem; left: 1.5rem; display: flex; gap: 1.1rem; color: #68868d; font-size: 0.72rem; letter-spacing: 0.18em; }
 .fps-counter b { color: var(--azure); font-family: 'Russo One', sans-serif; }
+.player-scoreboard {
+  position: absolute;
+  z-index: 4;
+  top: 15%;
+  left: 50%;
+  width: min(90vw, 46rem);
+  padding: 1.4rem 1.6rem 1.6rem;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, rgba(3, 18, 24, 0.96), rgba(8, 31, 38, 0.92));
+  border: 1px solid rgba(117, 211, 220, 0.48);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48), inset 0 1px rgba(255, 255, 255, 0.05);
+  clip-path: polygon(0 0, 96% 0, 100% 14%, 100% 100%, 4% 100%, 0 86%);
+}
+.player-scoreboard[hidden] { display: none; }
+.player-scoreboard > .eyebrow { margin: 0 0 0.8rem; text-align: center; }
+.player-scoreboard__score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem; margin-bottom: 1rem; font: 1rem 'Russo One', sans-serif; letter-spacing: 0.12em; }
+.player-scoreboard__score span { display: flex; align-items: baseline; gap: 0.75rem; }
+.player-scoreboard__score b { font-size: 2.2rem; }
+.player-scoreboard__score i { color: #70929a; font-style: normal; font-size: 1.6rem; }
+.player-scoreboard__azure { justify-content: flex-end; color: var(--azure); }
+.player-scoreboard__coral { color: var(--coral); }
+.player-scoreboard__teams { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+.player-scoreboard__team { min-height: 7rem; padding: 0.85rem; background: rgba(255, 255, 255, 0.035); border-top: 2px solid; }
+.player-scoreboard__team--azure { border-color: var(--azure); }
+.player-scoreboard__team--coral { border-color: var(--coral); }
+.player-scoreboard__team h2 { margin: 0 0 0.6rem; color: #789198; font-size: 0.65rem; letter-spacing: 0.16em; }
+.player-scoreboard__player { display: flex; justify-content: space-between; gap: 1rem; padding: 0.55rem 0.65rem; background: rgba(255, 255, 255, 0.04); }
+.player-scoreboard__player + .player-scoreboard__player { margin-top: 0.35rem; }
+.player-scoreboard__player span { overflow: hidden; color: #eaffff; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.player-scoreboard__player small { flex: none; color: var(--acid); font-size: 0.58rem; letter-spacing: 0.12em; }
+.player-scoreboard__empty { margin: 1.7rem 0; color: #58747b; text-align: center; font-size: 0.65rem; letter-spacing: 0.14em; }
 
 .boost-gauge { position: absolute; right: 2rem; bottom: 1.8rem; width: 11rem; text-align: right; transform: skewX(-5deg); }
 .boost-gauge strong { display: block; color: #fff; font: 3rem/0.9 'Russo One', sans-serif; text-shadow: 0 0 18px #ffb433; }
@@ -181,5 +212,7 @@ kbd { border: 1px solid #577079; padding: 0.12rem 0.35rem; color: #dfffff; }
   .controls-hint { display: none; }
   .boost-gauge { right: 1rem; bottom: 1rem; transform: scale(0.8); transform-origin: right bottom; }
   .camera-tag { left: 0.8rem; }
+  .player-scoreboard { top: 6.5rem; width: calc(100% - 1.6rem); padding: 1rem; }
+  .player-scoreboard__teams { grid-template-columns: 1fr; }
   .countdown { font-size: 5rem; }
 }

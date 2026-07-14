@@ -12,5 +12,6 @@ export const BINDINGS = Object.freeze({
   ballCamera: 'Space',
   fpsCounter: 'F2',
   freeCamera: 'F3',
+  playerScoreboard: 'Tab',
   pause: 'Escape',
 });

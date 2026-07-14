@@ -52,6 +52,14 @@ describe('InputManager controls', () => {
     expect(input.sample().toggleFpsCounter).toBe(false);
     dispatchKeyboard(target, 'keyup', 'F2');
   });
+
+  it('holds the player scoreboard on Tab and prevents browser focus changes', () => {
+    const down = eventWithProperties('keydown', { code: 'Tab' });
+    expect(target.dispatchEvent(down)).toBe(false);
+    expect(input.isDown('Tab')).toBe(true);
+    dispatchKeyboard(target, 'keyup', 'Tab');
+    expect(input.isDown('Tab')).toBe(false);
+  });
 });
 
 const dispatch = (target: EventTarget, type: string): void => {

@@ -76,6 +76,7 @@ Variables prefixed with `VITE_` are bundled into browser code and must never con
 | `Shift` | Powerslide |
 | `Q` / `E` | Air roll |
 | `Space` | Toggle ball camera |
+| `Tab` | Hold to show the score and player roster |
 | `F2` | Toggle the FPS and car-position readout |
 | `F3` | Toggle the debug free camera |
 | `Escape` | Open or close the pause menu |
