@@ -90,7 +90,7 @@ export class UIManager {
             <span><b>LMB</b> BOOST</span><span><b>SHIFT</b> SLIDE</span>
             <span><b>Q E</b> AIR ROLL</span><span><b>SPACE</b> BALL CAM</span>
             <span><b>TAB</b> SCORE + PLAYERS</span>
-            ${actions.chat ? '<span><b>ENTER</b> CHAT</span>' : ''}
+            ${actions.chat ? '<span><b>ENTER</b> ALL CHAT</span><span><b>T</b> TEAM CHAT</span><span><b>Y</b> PARTY CHAT</span>' : ''}
           </aside>
           <div class="boost-gauge" aria-label="Boost">
             <span class="boost-label">BOOST</span>
@@ -145,7 +145,7 @@ export class UIManager {
       onShowPosition: (visible) => this.setPositionVisible(visible),
     });
     this.chatPanel = actions.chat
-      ? new ChatPanel(this.require('[data-chat-panel]'), actions.chat)
+      ? new ChatPanel(this.require('[data-chat-panel]'), actions.chat, { mode: 'match' })
       : null;
     this.setFpsVisible(this.loadFpsPreference());
     this.setPositionVisible(this.loadPositionPreference());

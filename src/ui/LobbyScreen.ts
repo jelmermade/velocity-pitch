@@ -304,9 +304,9 @@ export class LobbyScreen {
     this.bindMatchSettingsControls((settings) => this.client?.updateMatchSettings(settings));
     this.chatPanel = new ChatPanel(this.require('[data-chat-panel]'), {
       messages: this.client.currentChatMessages(),
-      send: (text) => this.client?.sendChat(text),
+      send: (text, channel) => this.client?.sendChat(text, channel) ?? false,
       subscribe: (handler) => this.client?.onChat(handler) ?? (() => {}),
-    });
+    }, { mode: 'lobby', config: { closeAfterSend: false } });
     this.require('[data-copy-invite]').addEventListener('click', () => {
       void navigator.clipboard.writeText(inviteUrl).then(() => this.setStatus('Invite link copied'));
     });

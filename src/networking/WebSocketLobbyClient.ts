@@ -9,8 +9,10 @@ import type {
   LobbySummary,
   MatchControlAction,
   ServerLobbyMessage,
+  ChatChannel,
   TeamId,
 } from './LobbyProtocol';
+import { CHAT_CHARACTER_LIMIT } from './LobbyProtocol';
 import { NETWORK_CONFIG } from './NetworkConfig';
 import { clearCommandEdges, mergeCommandEdges } from './PlayerCommandBuffer';
 
@@ -42,6 +44,8 @@ export class WebSocketLobbyClient {
   private readonly returnedToLobbyHandlers = new Set<() => void>();
   private readonly chatHandlers = new Set<(message: LobbyChatMessage) => void>();
   private readonly chatMessages: LobbyChatMessage[] = [];
+  private readonly chatMessageIds = new Set<string>();
+  private chatSequence = 0;
   private joinResolve: (() => void) | null = null;
   private joinReject: ((reason: Error) => void) | null = null;
   private lobbyListResolve: ((lobbies: readonly LobbySummary[]) => void) | null = null;
@@ -106,9 +110,25 @@ export class WebSocketLobbyClient {
     if (this.isHost()) this.send({ type: 'finishMatch' });
   }
 
-  sendChat(text: string): void {
-    const message = text.trim().slice(0, 160);
-    if (message) this.send({ type: 'chat', text: message });
+  sendChat(text: string, channel: ChatChannel = 'global'): boolean {
+    const normalized = normalizeChatText(text);
+    if (!normalized) return false;
+    this.chatSequence += 1;
+    const id = `${this.playerId || 'chat'}-${Date.now().toString(36)}-${this.chatSequence.toString(36)}`;
+    const player = this.players.find(({ id: playerId }) => playerId === this.playerId);
+    if (player) {
+      this.recordChatMessage({
+        id,
+        playerId: player.id,
+        playerName: player.name,
+        team: player.team,
+        channel,
+        text: normalized,
+        sentAt: Date.now(),
+      });
+    }
+    this.send({ type: 'chat', id, channel, text: normalized });
+    return true;
   }
 
   updateMatchSettings(settings: MatchSettings): void {
@@ -277,9 +297,7 @@ export class WebSocketLobbyClient {
       return;
     }
     if (message.type === 'chat') {
-      this.chatMessages.push(message.message);
-      if (this.chatMessages.length > 50) this.chatMessages.shift();
-      this.chatHandlers.forEach((handler) => handler(message.message));
+      this.recordChatMessage(message.message);
       return;
     }
     if (message.type === 'remoteInput') {
@@ -312,6 +330,18 @@ export class WebSocketLobbyClient {
     this.matchSettingsHandlers.forEach((handler) => handler(this.matchSettings));
   }
 
+  private recordChatMessage(message: LobbyChatMessage): void {
+    const messageKey = `${message.playerId}:${message.id}`;
+    if (this.chatMessageIds.has(messageKey)) return;
+    this.chatMessageIds.add(messageKey);
+    this.chatMessages.push(message);
+    if (this.chatMessages.length > 50) {
+      const removed = this.chatMessages.shift();
+      if (removed) this.chatMessageIds.delete(`${removed.playerId}:${removed.id}`);
+    }
+    this.chatHandlers.forEach((handler) => handler(message));
+  }
+
   private send(message: ClientLobbyMessage): void {
     if (this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message));
   }
@@ -325,4 +355,13 @@ const parseServerMessage = (payload: string): ServerLobbyMessage | null => {
   } catch {
     return null;
   }
+};
+
+const normalizeChatText = (value: string): string => {
+  let sanitized = '';
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    sanitized += code < 32 || code === 127 ? ' ' : character;
+  }
+  return sanitized.replace(/\s+/g, ' ').trim().slice(0, CHAT_CHARACTER_LIMIT);
 };

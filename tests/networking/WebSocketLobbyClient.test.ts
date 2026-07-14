@@ -109,26 +109,38 @@ describe('WebSocketLobbyClient lobby discovery', () => {
     expect(returnedToLobby).toBe(1);
   });
 
-  it('sends chat and keeps a bounded received-message history', async () => {
+  it('optimistically sends channel chat and deduplicates the server echo', async () => {
     const Client = await loadClient();
     const client = await Client.connect('ws://test');
     const socket = latestSocket(client);
+    socket.receive({
+      type: 'lobbyJoined',
+      lobbyId: 'ABC123',
+      lobbyName: "Host's Lobby",
+      playerId: 'host',
+      players: [{ id: 'host', name: 'Host', team: 'azure', host: true }],
+      settings: DEFAULT_MATCH_SETTINGS,
+    });
     const received: string[] = [];
     client.onChat((message) => received.push(message.text));
 
-    client.sendChat('  hello drivers  ');
+    expect(client.sendChat('  hello drivers  ', 'team')).toBe(true);
+    const sent = JSON.parse(socket.sent[0] ?? '') as { id: string };
+    expect(sent).toMatchObject({ type: 'chat', channel: 'team', text: 'hello drivers' });
+    expect(received).toEqual(['hello drivers']);
     socket.receive({
       type: 'chat',
       message: {
+        id: sent.id,
         playerId: 'host',
         playerName: 'Host',
         team: 'azure',
+        channel: 'team',
         text: 'hello drivers',
         sentAt: 1,
       },
     });
 
-    expect(JSON.parse(socket.sent[0] ?? '')).toEqual({ type: 'chat', text: 'hello drivers' });
     expect(received).toEqual(['hello drivers']);
     expect(client.currentChatMessages().map(({ text }) => text)).toEqual(['hello drivers']);
   });

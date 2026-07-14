@@ -2,12 +2,14 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import type {
   ClientLobbyMessage,
+  ChatChannel,
   LobbyPlayer,
   LobbySummary,
   MatchControlAction,
   ServerLobbyMessage,
   TeamId,
 } from '../src/networking/LobbyProtocol';
+import { CHAT_CHARACTER_LIMIT, CHAT_COOLDOWN_MS } from '../src/networking/LobbyProtocol';
 import { sanitizeMatchSettings, type MatchSettings } from '../src/gameplay/match/MatchSettings';
 import { fillBotSlots } from '../src/gameplay/bots/BotRoster';
 
@@ -146,19 +148,29 @@ const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage
   if (message.type === 'chat') {
     const player = lobby.players.get(connection.playerId);
     const text = sanitizeChatMessage(message.text);
+    const channel = sanitizeChatChannel(message.channel);
     const now = Date.now();
-    if (!player || !text || now - connection.lastChatAt < 500) return;
+    if (!player || !text || !channel || now - connection.lastChatAt < CHAT_COOLDOWN_MS) return;
     connection.lastChatAt = now;
-    broadcast(lobby, {
+    const outgoing: ServerLobbyMessage = {
       type: 'chat',
       message: {
+        id: sanitizeChatId(message.id),
         playerId: player.id,
         playerName: player.name,
         team: player.team,
+        channel,
         text,
         sentAt: now,
       },
-    });
+    };
+    if (channel === 'team') {
+      lobby.clients.forEach((client, playerId) => {
+        if (lobby.players.get(playerId)?.team === player.team) send(client.socket, outgoing);
+      });
+    } else {
+      broadcast(lobby, outgoing);
+    }
     return;
   }
   if (message.type === 'input') {
@@ -317,8 +329,16 @@ const sanitizeChatMessage = (value: unknown): string => {
     const code = character.charCodeAt(0);
     sanitized += code < 32 || code === 127 ? ' ' : character;
   }
-  return sanitized.replace(/\s+/g, ' ').trim().slice(0, 160);
+  return sanitized.replace(/\s+/g, ' ').trim().slice(0, CHAT_CHARACTER_LIMIT);
 };
+
+const sanitizeChatId = (value: unknown): string => (
+  typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : randomUUID()
+);
+
+const sanitizeChatChannel = (value: unknown): ChatChannel | null => (
+  value === 'global' || value === 'team' || value === 'party' ? value : null
+);
 
 const sanitizeLobbyName = (value: unknown, hostName: string): string => {
   if (typeof value !== 'string') return `${hostName}'s Lobby`;

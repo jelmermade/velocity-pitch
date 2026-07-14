@@ -90,7 +90,7 @@ export class GameApplication {
         ...(startedLobby ? {
           chat: {
             messages: startedLobby.client.currentChatMessages(),
-            send: (text: string) => startedLobby.client.sendChat(text),
+            send: (text, channel) => startedLobby.client.sendChat(text, channel),
             subscribe: (handler: Parameters<typeof startedLobby.client.onChat>[0]) => (
               startedLobby.client.onChat(handler)
             ),

@@ -5,11 +5,17 @@ import type { MatchSettings, TeamSize } from '../gameplay/match/MatchSettings';
 
 export type TeamId = 'azure' | 'coral';
 export type MatchControlAction = 'reset' | 'stop';
+export type ChatChannel = 'global' | 'team' | 'party';
+export type ChatMessageType = ChatChannel | 'system' | 'error';
+export const CHAT_CHARACTER_LIMIT = 160;
+export const CHAT_COOLDOWN_MS = 500;
 
 export interface LobbyChatMessage {
+  readonly id: string;
   readonly playerId: string;
   readonly playerName: string;
-  readonly team: TeamId;
+  readonly team?: TeamId;
+  readonly channel: ChatMessageType;
   readonly text: string;
   readonly sentAt: number;
 }
@@ -47,7 +53,7 @@ export type ClientLobbyMessage =
   | { readonly type: 'kickPlayer'; readonly playerId: string }
   | { readonly type: 'matchControl'; readonly action: MatchControlAction }
   | { readonly type: 'finishMatch' }
-  | { readonly type: 'chat'; readonly text: string }
+  | { readonly type: 'chat'; readonly id: string; readonly channel: ChatChannel; readonly text: string }
   | { readonly type: 'updateMatchSettings'; readonly settings: MatchSettings }
   | { readonly type: 'input'; readonly sequence: number; readonly command: PlayerCommand }
   | { readonly type: 'authoritativeFrame'; readonly frame: AuthoritativeFrame };
