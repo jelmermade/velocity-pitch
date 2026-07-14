@@ -12,6 +12,7 @@ import { CameraShake } from './CameraShake';
 import { FollowCamera } from './FollowCamera';
 import { FreeCamera } from './FreeCamera';
 import { ReplayCamera } from './ReplayCamera';
+import { VictoryCamera } from './VictoryCamera';
 
 type CameraMode = 'follow' | 'ball' | 'free';
 
@@ -24,6 +25,7 @@ export class CameraController {
   private readonly ball = new BallCamera();
   private readonly free = new FreeCamera();
   private readonly replay = new ReplayCamera();
+  private readonly victory = new VictoryCamera();
   private readonly collision: CameraCollision;
   private readonly shake = new CameraShake();
   private readonly unsubscribeImpact: () => void;
@@ -64,10 +66,10 @@ export class CameraController {
     }
     if (this.victoryActive) {
       this.applyPose(
-        this.follow.pose(snapshot.car, this.distance, CAMERA_TUNING.height, CAMERA_TUNING.targetHeight),
+        this.victory.pose(),
         deltaSeconds,
-        CAMERA_TUNING.stiffness,
-        this.baseFov,
+        7,
+        72,
       );
       return;
     }

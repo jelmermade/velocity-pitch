@@ -136,6 +136,8 @@ export class CarController {
     return this.boost.add(amount);
   }
 
+  refillBoost(): void { this.boost.reset(); }
+
   private aerialControlImpulse(
     axis: Vec3,
     input: number,

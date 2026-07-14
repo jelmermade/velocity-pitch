@@ -57,12 +57,14 @@ export class Car {
   }
 
   updateVictory(world: PhysicsWorld, command: PlayerCommand, deltaSeconds: number): void {
-    this.controlState = this.controller.update(world, this.body, {
+    const controlState = this.controller.update(world, this.body, {
       ...NEUTRAL_COMMAND,
       jumpPressed: command.jumpPressed,
       jumpHeld: command.jumpHeld,
       boost: command.boost,
     }, deltaSeconds);
+    this.controller.refillBoost();
+    this.controlState = { ...controlState, boost: 100 };
     this.body.applyTorqueImpulse({
       x: 0,
       y: -command.steer * this.tuning.aerialTorque * 0.35 * deltaSeconds,

@@ -13,7 +13,7 @@ describe('victory camera', () => {
 
   afterEach(() => world?.dispose());
 
-  it('follows the winning car instead of an underground ball', async () => {
+  it('uses a fixed midfield overview instead of following a car or underground ball', async () => {
     world = await RapierPhysicsWorld.create();
     const camera = new THREE.PerspectiveCamera();
     const input = { isDown: () => false } as unknown as InputManager;
@@ -22,8 +22,9 @@ describe('victory camera', () => {
     controller.update(VICTORY_SNAPSHOT, 1 / 60);
 
     expect(controller.modeName()).toBe('victory');
-    expect(camera.position.y).toBeGreaterThan(2);
-    expect(camera.position.z).toBeGreaterThan(5);
+    expect(camera.position.x).toBe(0);
+    expect(camera.position.y).toBeCloseTo(8.5);
+    expect(camera.position.z).toBeCloseTo(14);
     controller.dispose();
   });
 });

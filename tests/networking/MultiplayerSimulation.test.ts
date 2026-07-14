@@ -80,7 +80,8 @@ describe('authoritative multiplayer simulation', () => {
     expect(guest?.transform.position.z).toBeCloseTo(0, 4);
     expect(guest?.transform.position.y).toBeGreaterThan(0.4);
     expect(maximumHeight).toBeGreaterThan(1.2);
-    expect(host?.boost).toBeLessThan(100);
+    expect(host?.boost).toBe(100);
+    expect(host?.boosting).toBe(true);
     expect(Math.abs(host?.transform.rotation.y ?? 0)).toBeGreaterThan(0.05);
   });
 });
