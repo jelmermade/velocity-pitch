@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EventBus } from '../../src/core/events/EventBus';
 import { RUNTIME_CONFIG } from '../../src/app/RuntimeConfig';
 import type { GameEventMap } from '../../src/core/events/GameEvents';
+import type { MatchController } from '../../src/gameplay/match/MatchController';
+import { VICTORY_CENTER } from '../../src/gameplay/match/VictoryLineup';
 import { GameSimulation } from '../../src/gameplay/simulation/GameSimulation';
 import { NEUTRAL_COMMAND } from '../../src/input/PlayerCommand';
 import type { LobbyPlayer } from '../../src/networking/LobbyProtocol';
@@ -85,5 +87,29 @@ describe('authoritative multiplayer simulation', () => {
     expect(host?.boost).toBe(100);
     expect(host?.boosting).toBe(true);
     expect(Math.abs(host?.transform.rotation.y ?? 0)).toBeGreaterThan(0.05);
+  });
+
+  it('places the winning car at the visible midfield center after a non-draw match', async () => {
+    world = await RapierPhysicsWorld.create();
+    const simulation = new GameSimulation(world, new EventBus<GameEventMap>(), PLAYERS, 'host');
+    const match = Reflect.get(simulation, 'match') as MatchController;
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+    match.update(3);
+    match.goal('azure', { x: 0, y: 3.75, z: 51 });
+    simulation.stopMatch();
+
+    simulation.updatePlayers(new Map([
+      ['host', { ...NEUTRAL_COMMAND, throttle: 1 }],
+      ['guest', NEUTRAL_COMMAND],
+    ]), step);
+
+    const frame = simulation.authoritativeFrame(1);
+    const winner = frame.cars.host;
+    expect(frame.snapshot.match).toMatchObject({ phase: 'ended', azureScore: 1, coralScore: 0 });
+    expect(winner?.transform.position.x).toBe(VICTORY_CENTER.x);
+    expect(winner?.transform.position.z).toBe(VICTORY_CENTER.z);
+    expect(winner?.transform.position.y).toBeCloseTo(VICTORY_CENTER.y, 2);
+    expect(winner?.linearVelocity.x).toBe(0);
+    expect(winner?.linearVelocity.z).toBe(0);
   });
 });

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createVictoryLineup } from '../../src/gameplay/match/VictoryLineup';
+import {
+  createVictoryLineup,
+  selectVictoryCars,
+  VICTORY_CENTER,
+} from '../../src/gameplay/match/VictoryLineup';
 import type { LobbyPlayer } from '../../src/networking/LobbyProtocol';
 
 const PLAYERS: readonly LobbyPlayer[] = [
@@ -18,5 +22,21 @@ describe('victory lineup', () => {
     expect(lineup.get('azure-2')).toEqual({ x: 1.7, y: 0.72, z: 0 });
     expect(lineup.has('coral-1')).toBe(false);
     expect(lineup.has('coral-2')).toBe(false);
+    expect((lineup.get('azure-1')?.x ?? 0) + (lineup.get('azure-2')?.x ?? 0)).toBe(VICTORY_CENTER.x);
+  });
+
+  it('keeps every winning car visible and excludes losing cars', () => {
+    const lineup = createVictoryLineup(PLAYERS, 'azure');
+    const visibleCars = selectVictoryCars({
+      'azure-1': 'first winner',
+      'coral-1': 'first loser',
+      'azure-2': 'second winner',
+      'coral-2': 'second loser',
+    }, lineup);
+
+    expect(visibleCars).toEqual({
+      'azure-1': 'first winner',
+      'azure-2': 'second winner',
+    });
   });
 });

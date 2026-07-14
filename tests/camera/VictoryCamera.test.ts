@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CameraController } from '../../src/camera/CameraController';
+import { VICTORY_CENTER } from '../../src/gameplay/match/VictoryLineup';
 import { EventBus } from '../../src/core/events/EventBus';
 import type { GameEventMap } from '../../src/core/events/GameEvents';
 import type { InputManager } from '../../src/input/InputManager';
@@ -26,7 +27,11 @@ describe('victory camera', () => {
     expect(camera.position.y).toBeCloseTo(8.5);
     expect(camera.position.z).toBeCloseTo(14);
     camera.updateMatrixWorld();
-    const lineupCenter = new THREE.Vector3(0, 0.72, 0).project(camera);
+    const lineupCenter = new THREE.Vector3(
+      VICTORY_CENTER.x,
+      VICTORY_CENTER.y,
+      VICTORY_CENTER.z,
+    ).project(camera);
     expect(lineupCenter.x).toBeCloseTo(0, 5);
     expect(lineupCenter.y).toBeCloseTo(0, 5);
     controller.dispose();

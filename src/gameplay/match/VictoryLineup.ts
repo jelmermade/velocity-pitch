@@ -2,7 +2,8 @@ import type { Vec3 } from '../../core/math/Vector3';
 import type { LobbyPlayer, TeamId } from '../../networking/LobbyProtocol';
 
 const VICTORY_CAR_SPACING = 3.4;
-const VICTORY_CAR_HEIGHT = 0.72;
+
+export const VICTORY_CENTER: Readonly<Vec3> = Object.freeze({ x: 0, y: 0.72, z: 0 });
 
 export const createVictoryLineup = (
   players: readonly LobbyPlayer[],
@@ -13,8 +14,18 @@ export const createVictoryLineup = (
     : players.filter(({ team }) => team === winningTeam);
 
   return new Map(winners.map((player, index) => [player.id, {
-    x: (index - (winners.length - 1) / 2) * VICTORY_CAR_SPACING,
-    y: VICTORY_CAR_HEIGHT,
-    z: 0,
+    x: VICTORY_CENTER.x + (index - (winners.length - 1) / 2) * VICTORY_CAR_SPACING,
+    y: VICTORY_CENTER.y,
+    z: VICTORY_CENTER.z,
   }]));
 };
+
+export const selectVictoryCars = <T>(
+  cars: Readonly<Record<string, T>>,
+  lineup: ReadonlyMap<string, Vec3>,
+): Readonly<Record<string, T>> => Object.fromEntries(
+  [...lineup.keys()].flatMap((playerId) => {
+    const car = cars[playerId];
+    return car === undefined ? [] : [[playerId, car]];
+  }),
+);

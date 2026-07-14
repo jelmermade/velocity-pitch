@@ -4,6 +4,7 @@ import { EventBus } from '../core/events/EventBus';
 import type { GameEventMap } from '../core/events/GameEvents';
 import { GameSimulation } from '../gameplay/simulation/GameSimulation';
 import { DEFAULT_MATCH_SETTINGS, type MatchSettings } from '../gameplay/match/MatchSettings';
+import { createVictoryLineup, selectVictoryCars } from '../gameplay/match/VictoryLineup';
 import { InputManager } from '../input/InputManager';
 import { LocalSession } from '../networking/LocalSession';
 import { NetworkSession } from '../networking/NetworkSession';
@@ -154,18 +155,16 @@ export class GameApplication {
         const winningTeam = baseSnapshot.match.azureScore === baseSnapshot.match.coralScore
           ? null
           : baseSnapshot.match.azureScore > baseSnapshot.match.coralScore ? 'azure' : 'coral';
+        const victoryLineup = ended ? createVictoryLineup(session.players, winningTeam) : null;
         const focusPlayerId = ended
-          ? session.players.find(({ team }) => winningTeam === null || team === winningTeam)?.id
+          ? victoryLineup?.keys().next().value
           : session.localPlayerId;
         const localCar = replaying ? undefined : networkFrame?.cars[focusPlayerId ?? session.localPlayerId];
         const snapshot = localCar ? { ...baseSnapshot, car: localCar } : baseSnapshot;
         const renderedCars = replaying
           ? { [session.localPlayerId]: snapshot.car }
-          : ended && networkFrame
-            ? Object.fromEntries(Object.entries(networkFrame.cars).filter(([playerId]) => {
-                const player = session.players.find(({ id }) => id === playerId);
-                return player !== undefined && (winningTeam === null || player.team === winningTeam);
-              }))
+          : ended && networkFrame && victoryLineup
+            ? selectVictoryCars(networkFrame.cars, victoryLineup)
             : networkFrame?.cars;
         renderer.update(snapshot, renderedCars, deltaSeconds);
         camera.update(snapshot, deltaSeconds);
