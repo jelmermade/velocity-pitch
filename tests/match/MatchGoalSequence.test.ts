@@ -16,6 +16,7 @@ describe('MatchController goal sequence', () => {
     const position = { x: 0, y: 3.75, z: 51 };
     expect(match.goal('azure', position)).toBe(true);
     expect(match.state().phase).toBe('goalExplosion');
+    expect(match.winningTeam()).toBe('azure');
     expect(match.canSimulate()).toBe(true);
     expect(goalEvents).toEqual([{ team: 'azure', azure: 1, coral: 0, position }]);
 
@@ -61,6 +62,7 @@ describe('MatchController goal sequence', () => {
       coralScore: 0,
       lastGoalTeam: null,
     });
+    expect(match.winningTeam()).toBeNull();
     expect(match.consumeResetRequest()).toBe(true);
 
     match.stop();

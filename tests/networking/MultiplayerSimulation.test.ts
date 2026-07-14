@@ -41,4 +41,44 @@ describe('authoritative multiplayer simulation', () => {
     expect(guest).toBeDefined();
     expect((guest?.transform.position.z ?? -23) - (before?.transform.position.z ?? -23)).toBeGreaterThan(4);
   });
+
+  it('anchors victory cars at midfield while allowing jump, boost, and yaw', async () => {
+    world = await RapierPhysicsWorld.create();
+    const simulation = new GameSimulation(world, new EventBus<GameEventMap>(), PLAYERS, 'host');
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+    simulation.stopMatch();
+    let maximumHeight = 0;
+
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz * 3; tick += 1) {
+      simulation.updatePlayers(new Map([
+        ['host', {
+          ...NEUTRAL_COMMAND,
+          throttle: 1,
+          steer: 1,
+          boost: true,
+          jumpPressed: tick === 0,
+          jumpHeld: tick < 10,
+        }],
+        ['guest', NEUTRAL_COMMAND],
+      ]), step);
+      maximumHeight = Math.max(
+        maximumHeight,
+        simulation.authoritativeFrame(tick).cars.host?.transform.position.y ?? 0,
+      );
+    }
+
+    const frame = simulation.authoritativeFrame(RUNTIME_CONFIG.physicsHz * 3);
+    const host = frame.cars.host;
+    const guest = frame.cars.guest;
+    expect(frame.snapshot.match.phase).toBe('ended');
+    expect(host).toBeDefined();
+    expect(guest).toBeDefined();
+    expect(host?.transform.position.x).toBeCloseTo(-1.7, 4);
+    expect(host?.transform.position.z).toBeCloseTo(0, 4);
+    expect(guest?.transform.position.x).toBeCloseTo(1.7, 4);
+    expect(guest?.transform.position.z).toBeCloseTo(0, 4);
+    expect(maximumHeight).toBeGreaterThan(1.2);
+    expect(host?.boost).toBeLessThan(100);
+    expect(Math.abs(host?.transform.rotation.y ?? 0)).toBeGreaterThan(0.05);
+  });
 });

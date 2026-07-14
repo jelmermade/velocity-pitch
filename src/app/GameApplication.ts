@@ -115,7 +115,7 @@ export class GameApplication {
           if (tick % snapshotInterval === 0) session.publish(simulation.authoritativeFrame(tick));
           if (startedLobby && simulation.snapshot(1).match.phase === 'ended') {
             endedSeconds += deltaSeconds;
-            if (!finishMatchSent && endedSeconds >= 2.5) {
+            if (!finishMatchSent && endedSeconds >= 8) {
               finishMatchSent = true;
               startedLobby.client.finishMatch();
             }
@@ -150,7 +150,14 @@ export class GameApplication {
           : guestInterpolator.sample(performance.now() / 1000) ?? guestFrame;
         const baseSnapshot = session.authoritative ? simulation.snapshot(alpha) : networkFrame?.snapshot ?? simulation.snapshot(alpha);
         const replaying = baseSnapshot.match.phase === 'replay';
-        const localCar = replaying ? undefined : networkFrame?.cars[session.localPlayerId];
+        const ended = baseSnapshot.match.phase === 'ended';
+        const winningTeam = baseSnapshot.match.azureScore === baseSnapshot.match.coralScore
+          ? null
+          : baseSnapshot.match.azureScore > baseSnapshot.match.coralScore ? 'azure' : 'coral';
+        const focusPlayerId = ended
+          ? session.players.find(({ team }) => winningTeam === null || team === winningTeam)?.id
+          : session.localPlayerId;
+        const localCar = replaying ? undefined : networkFrame?.cars[focusPlayerId ?? session.localPlayerId];
         const snapshot = localCar ? { ...baseSnapshot, car: localCar } : baseSnapshot;
         const renderedCars = replaying ? { [session.localPlayerId]: snapshot.car } : networkFrame?.cars;
         renderer.update(snapshot, renderedCars);

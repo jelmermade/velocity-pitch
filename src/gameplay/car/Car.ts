@@ -2,7 +2,7 @@ import { DEFAULT_CAR_TUNING, type CarTuning } from '../../core/config/CarTuning'
 import { IDENTITY_QUAT } from '../../core/math/Quaternion';
 import type { PhysicsBody } from '../../physics/PhysicsBody';
 import type { PhysicsWorld } from '../../physics/PhysicsWorld';
-import type { PlayerCommand } from '../../input/PlayerCommand';
+import { NEUTRAL_COMMAND, type PlayerCommand } from '../../input/PlayerCommand';
 import type { Transform } from '../../core/types/Transform';
 import { ZERO, type Vec3 } from '../../core/math/Vector3';
 import { CarController } from './CarController';
@@ -26,7 +26,7 @@ export class Car {
 
   constructor(
     world: PhysicsWorld,
-    tuning: CarTuning = DEFAULT_CAR_TUNING,
+    private readonly tuning: CarTuning = DEFAULT_CAR_TUNING,
     private readonly spawn: CarSpawn = DEFAULT_CAR_SPAWN,
   ) {
     this.controller = new CarController(tuning);
@@ -54,6 +54,29 @@ export class Car {
 
   update(world: PhysicsWorld, command: PlayerCommand, deltaSeconds: number): void {
     this.controlState = this.controller.update(world, this.body, command, deltaSeconds);
+  }
+
+  updateVictory(world: PhysicsWorld, command: PlayerCommand, deltaSeconds: number): void {
+    this.controlState = this.controller.update(world, this.body, {
+      ...NEUTRAL_COMMAND,
+      jumpPressed: command.jumpPressed,
+      jumpHeld: command.jumpHeld,
+      boost: command.boost,
+    }, deltaSeconds);
+    this.body.applyTorqueImpulse({
+      x: 0,
+      y: -command.steer * this.tuning.aerialTorque * 0.35 * deltaSeconds,
+      z: 0,
+    });
+  }
+
+  anchorHorizontal(position: Pick<Vec3, 'x' | 'z'>): void {
+    const currentPosition = this.body.position();
+    const linearVelocity = this.body.linearVelocity();
+    const angularVelocity = this.body.angularVelocity();
+    this.body.setPosition({ x: position.x, y: currentPosition.y, z: position.z });
+    this.body.setLinearVelocity({ x: 0, y: linearVelocity.y, z: 0 });
+    this.body.setAngularVelocity({ x: 0, y: angularVelocity.y, z: 0 });
   }
 
   state(): CarState {

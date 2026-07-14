@@ -98,6 +98,12 @@ export class MatchController {
     this.events.emit('matchEnded', { winner });
   }
 
+  winningTeam(): 'azure' | 'coral' | null {
+    const scores = this.scores.scores();
+    if (scores.azure === scores.coral) return null;
+    return scores.azure > scores.coral ? 'azure' : 'coral';
+  }
+
   state(): MatchState {
     const scores = this.scores.scores();
     return {

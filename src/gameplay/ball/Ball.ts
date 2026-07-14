@@ -44,4 +44,10 @@ export class Ball {
     this.body.setAngularVelocity({ x: 0, y: 0, z: 0 });
     this.body.wakeUp();
   }
+
+  hideForVictory(): void {
+    this.body.setPosition({ x: 0, y: -10, z: 0 });
+    this.body.setLinearVelocity({ x: 0, y: 0, z: 0 });
+    this.body.setAngularVelocity({ x: 0, y: 0, z: 0 });
+  }
 }

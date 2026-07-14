@@ -30,17 +30,18 @@ export class GameSimulation {
   private previous: SimulationSnapshot;
   private current: SimulationSnapshot;
   private impactCooldown = 0;
+  private victoryAnchors: ReadonlyMap<string, Vec3> | null = null;
 
   constructor(
     private readonly world: PhysicsWorld,
     private readonly events: EventBus<GameEventMap>,
-    players: readonly LobbyPlayer[] = [{ id: 'local', name: 'Local player', team: 'azure', host: true }],
+    private readonly players: readonly LobbyPlayer[] = [{ id: 'local', name: 'Local player', team: 'azure', host: true }],
     private readonly localPlayerId: string = players[0]?.id ?? 'local',
     private readonly settings: MatchSettings = DEFAULT_MATCH_SETTINGS,
   ) {
     createArena(world);
     const carTuning = carTuningForMatch(settings);
-    players.forEach((player, index) => this.cars.set(player.id, new Car(world, carTuning, spawnFor(player, index))));
+    this.players.forEach((player, index) => this.cars.set(player.id, new Car(world, carTuning, spawnFor(player, index))));
     if (!this.cars.has(this.localPlayerId)) throw new Error('Local player is missing from the simulation roster');
     this.ball = new Ball(world);
     this.match = new MatchController(events);
@@ -61,7 +62,9 @@ export class GameSimulation {
     this.match.update(deltaSeconds);
     if (this.match.consumeResetRequest()) this.resetActors();
 
-    if (this.match.canSimulate()) {
+    if (this.match.state().phase === 'ended') {
+      this.updateVictoryPresentation(commands, deltaSeconds);
+    } else if (this.match.canSimulate()) {
       const carBefore = this.localCar().state().linearVelocity;
       const ballBefore = this.ball.state().linearVelocity;
       this.cars.forEach((car, playerId) => {
@@ -100,7 +103,10 @@ export class GameSimulation {
     };
   }
 
-  resetMatch(): void { this.match.reset(); }
+  resetMatch(): void {
+    this.victoryAnchors = null;
+    this.match.reset();
+  }
 
   stopMatch(): void { this.match.stop(); }
 
@@ -123,6 +129,46 @@ export class GameSimulation {
     this.ball.reset();
     this.boostPickups.reset();
     this.replay.clear();
+  }
+
+  private updateVictoryPresentation(
+    commands: ReadonlyMap<string, PlayerCommand>,
+    deltaSeconds: number,
+  ): void {
+    if (!this.victoryAnchors) this.beginVictoryPresentation();
+    const anchors = this.victoryAnchors;
+    if (!anchors) return;
+    anchors.forEach((_anchor, playerId) => {
+      this.cars.get(playerId)?.updateVictory(
+        this.world,
+        commands.get(playerId) ?? NEUTRAL_COMMAND,
+        deltaSeconds,
+      );
+    });
+    this.world.step(deltaSeconds);
+    anchors.forEach((anchor, playerId) => this.cars.get(playerId)?.anchorHorizontal(anchor));
+  }
+
+  private beginVictoryPresentation(): void {
+    const winningTeam = this.match.winningTeam();
+    const winners = winningTeam ? this.players.filter(({ team }) => team === winningTeam) : this.players;
+    const anchors = new Map<string, Vec3>();
+    winners.forEach((player, index) => {
+      const anchor = victoryAnchor(index, winners.length);
+      anchors.set(player.id, anchor);
+      this.cars.get(player.id)?.teleport({
+        position: anchor,
+        rotation: player.team === 'azure' ? { x: 0, y: 0, z: 0, w: 1 } : { x: 0, y: 1, z: 0, w: 0 },
+      });
+    });
+    this.players.filter((player) => !anchors.has(player.id)).forEach((player, index) => {
+      this.cars.get(player.id)?.teleport({
+        position: { x: index * 3, y: -10, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      });
+    });
+    this.ball.hideForVictory();
+    this.victoryAnchors = anchors;
   }
 
   private scoreGoal(team: 'azure' | 'coral'): void {
@@ -188,3 +234,9 @@ const spawnFor = (player: LobbyPlayer, rosterIndex: number): CarSpawn => {
   }
   return { position: { x: -x, y: 0.62, z: -z }, rotation: { x: 0, y: 1, z: 0, w: 0 } };
 };
+
+const victoryAnchor = (index: number, playerCount: number): Vec3 => ({
+  x: (index - (playerCount - 1) / 2) * 3.4,
+  y: 0.72,
+  z: 0,
+});
