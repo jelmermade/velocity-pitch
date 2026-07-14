@@ -7,7 +7,7 @@ export class BallView {
 
   constructor() {
     const shell = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(BALL_TUNING.radius, 4),
+      new THREE.IcosahedronGeometry(BALL_TUNING.radius, 3),
       new THREE.MeshStandardMaterial({ color: 0xe7eee5, roughness: 0.34, metalness: 0.18 }),
     );
     shell.castShadow = true;

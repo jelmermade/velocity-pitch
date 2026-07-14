@@ -1,7 +1,8 @@
 import type { EventBus } from '../../core/events/EventBus';
 import type { GameEventMap } from '../../core/events/GameEvents';
 import { ARENA_TUNING } from '../../core/config/ArenaTuning';
-import { distance, length, type Vec3 } from '../../core/math/Vector3';
+import { BALL_TUNING } from '../../core/config/BallTuning';
+import { distance, length, sub, type Vec3 } from '../../core/math/Vector3';
 import { NEUTRAL_COMMAND, type PlayerCommand } from '../../input/PlayerCommand';
 import type { AuthoritativeFrame, LobbyPlayer } from '../../networking/LobbyProtocol';
 import type { PhysicsWorld } from '../../physics/PhysicsWorld';
@@ -13,6 +14,7 @@ import { BoostPickupSystem } from '../boost/BoostPickupSystem';
 import { Car, type CarSpawn } from '../car/Car';
 import { GoalExplosionSystem } from '../effects/GoalExplosionSystem';
 import { MatchController } from '../match/MatchController';
+import { carTuningForMatch, DEFAULT_MATCH_SETTINGS, type MatchSettings } from '../match/MatchSettings';
 import { GoalReplayBuffer } from '../replay/GoalReplayBuffer';
 import { interpolateSnapshots } from './SnapshotInterpolator';
 import type { SimulationSnapshot } from './SimulationSnapshot';
@@ -34,9 +36,11 @@ export class GameSimulation {
     private readonly events: EventBus<GameEventMap>,
     players: readonly LobbyPlayer[] = [{ id: 'local', name: 'Local player', team: 'azure', host: true }],
     private readonly localPlayerId: string = players[0]?.id ?? 'local',
+    private readonly settings: MatchSettings = DEFAULT_MATCH_SETTINGS,
   ) {
     createArena(world);
-    players.forEach((player, index) => this.cars.set(player.id, new Car(world, undefined, spawnFor(player, index))));
+    const carTuning = carTuningForMatch(settings);
+    players.forEach((player, index) => this.cars.set(player.id, new Car(world, carTuning, spawnFor(player, index))));
     if (!this.cars.has(this.localPlayerId)) throw new Error('Local player is missing from the simulation roster');
     this.ball = new Ball(world);
     this.match = new MatchController(events);
@@ -64,6 +68,7 @@ export class GameSimulation {
         car.update(this.world, commands.get(playerId) ?? NEUTRAL_COMMAND, deltaSeconds);
       });
       this.world.step(deltaSeconds);
+      this.applyHitPower(ballBefore);
       this.detectImpacts(carBefore, ballBefore, deltaSeconds);
       this.updateBoostPickups(deltaSeconds);
       const scoringTeam = detectScoringTeam(this.ball.state().transform.position);
@@ -94,6 +99,10 @@ export class GameSimulation {
       cars: Object.fromEntries([...this.cars].map(([playerId, car]) => [playerId, car.state()])),
     };
   }
+
+  resetMatch(): void { this.match.reset(); }
+
+  stopMatch(): void { this.match.stop(); }
 
   dispose(): void {
     this.world.dispose();
@@ -148,6 +157,17 @@ export class GameSimulation {
       this.events.emit('ballImpact', { intensity: ballChange, position: ballState.transform.position });
       this.impactCooldown = 0.08;
     }
+  }
+
+  private applyHitPower(ballBefore: Vec3): void {
+    if (this.settings.hitPowerMultiplier <= 1) return;
+    const ballState = this.ball.state();
+    if (length(sub(ballState.linearVelocity, ballBefore)) < 1.5) return;
+    const hitDistance = BALL_TUNING.radius + 2.2;
+    const nearCar = [...this.cars.values()].some((car) => (
+      distance(car.state().transform.position, ballState.transform.position) <= hitDistance
+    ));
+    if (nearCar) this.ball.amplifyVelocityChange(ballBefore, this.settings.hitPowerMultiplier);
   }
 
   private localCar(): Car {

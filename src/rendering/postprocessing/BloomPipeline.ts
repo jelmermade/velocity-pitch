@@ -8,16 +8,24 @@ export class BloomPipeline {
   private readonly composer: EffectComposer;
   private readonly bloom: UnrealBloomPass;
 
-  constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
+  constructor(
+    private readonly renderer: THREE.WebGLRenderer,
+    private readonly scene: THREE.Scene,
+    private readonly camera: THREE.Camera,
+  ) {
     this.composer = new EffectComposer(renderer);
     this.composer.addPass(new RenderPass(scene, camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.48, 0.45, 0.82);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0, 0.45, 0.82);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
   }
 
-  render(deltaSeconds: number): void { this.composer.render(deltaSeconds); }
+  render(deltaSeconds: number): void {
+    if (this.bloom.strength <= 0) this.renderer.render(this.scene, this.camera);
+    else this.composer.render(deltaSeconds);
+  }
   resize(width: number, height: number): void { this.composer.setSize(width, height); }
+  setPixelRatio(pixelRatio: number): void { this.composer.setPixelRatio(pixelRatio); }
   setStrength(strength: number): void { this.bloom.strength = strength; }
   dispose(): void { this.composer.dispose(); }
 }

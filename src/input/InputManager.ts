@@ -26,6 +26,7 @@ export class InputManager {
       boost: this.isMouseDown(BINDINGS.boostMouseButton),
       powerslide: this.isDown(BINDINGS.powerslide) || this.isDown(BINDINGS.powerslideAlternate),
       toggleBallCamera: this.wasPressed(BINDINGS.ballCamera),
+      toggleFpsCounter: this.wasPressed(BINDINGS.fpsCounter),
       toggleFreeCamera: this.wasPressed(BINDINGS.freeCamera),
       togglePause: this.wasPressed(BINDINGS.pause),
     };

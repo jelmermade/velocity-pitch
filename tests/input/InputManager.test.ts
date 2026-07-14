@@ -45,6 +45,13 @@ describe('InputManager controls', () => {
     expect(target.dispatchEvent(event)).toBe(false);
     expect(event.defaultPrevented).toBe(true);
   });
+
+  it('emits the FPS counter toggle once per F2 press', () => {
+    dispatchKeyboard(target, 'keydown', 'F2');
+    expect(input.sample().toggleFpsCounter).toBe(true);
+    expect(input.sample().toggleFpsCounter).toBe(false);
+    dispatchKeyboard(target, 'keyup', 'F2');
+  });
 });
 
 const dispatch = (target: EventTarget, type: string): void => {

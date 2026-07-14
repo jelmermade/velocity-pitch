@@ -42,4 +42,30 @@ describe('MatchController goal sequence', () => {
     expect(match.state().phase).toBe('replay');
     expect(match.state().replayProgress).toBeCloseTo(0.5);
   });
+
+  it('resets the full match and allows the host to stop it', () => {
+    const events = new EventBus<GameEventMap>();
+    const match = new MatchController(events);
+    const ended: GameEventMap['matchEnded'][] = [];
+    events.on('matchEnded', (event) => ended.push(event));
+    match.update(MATCH_TUNING.countdownSeconds);
+    match.goal('azure', { x: 0, y: 3.75, z: 51 });
+
+    match.reset();
+
+    expect(match.state()).toMatchObject({
+      phase: 'countdown',
+      paused: false,
+      timeRemaining: MATCH_TUNING.durationSeconds,
+      azureScore: 0,
+      coralScore: 0,
+      lastGoalTeam: null,
+    });
+    expect(match.consumeResetRequest()).toBe(true);
+
+    match.stop();
+
+    expect(match.state().phase).toBe('ended');
+    expect(ended).toEqual([{ winner: 'draw' }]);
+  });
 });

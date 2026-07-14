@@ -3,6 +3,7 @@ import { CameraController } from '../camera/CameraController';
 import { EventBus } from '../core/events/EventBus';
 import type { GameEventMap } from '../core/events/GameEvents';
 import { GameSimulation } from '../gameplay/simulation/GameSimulation';
+import { DEFAULT_MATCH_SETTINGS, type MatchSettings } from '../gameplay/match/MatchSettings';
 import { InputManager } from '../input/InputManager';
 import { LocalSession } from '../networking/LocalSession';
 import { NetworkSession } from '../networking/NetworkSession';
@@ -16,6 +17,7 @@ import { RapierPhysicsWorld } from '../physics/rapier/RapierPhysicsWorld';
 import { GameRenderer } from '../rendering/GameRenderer';
 import { UIManager } from '../ui/UIManager';
 import { GameLoop } from './GameLoop';
+import { RUNTIME_CONFIG } from './RuntimeConfig';
 
 export class GameApplication {
   private constructor(
@@ -28,44 +30,98 @@ export class GameApplication {
     private readonly ui: UIManager,
     private readonly session: GameSession,
     private readonly events: EventBus<GameEventMap>,
+    private readonly unsubscribeSessionError: (() => void) | null,
   ) {}
 
-  static async create(root: HTMLElement, startedLobby: StartedLobby | null = null): Promise<GameApplication> {
+  static async create(
+    root: HTMLElement,
+    startedLobby: StartedLobby | null = null,
+    matchSettings: MatchSettings = startedLobby?.settings ?? DEFAULT_MATCH_SETTINGS,
+    onLeave: () => void = () => {},
+    onReturnToLobby: () => void = () => {},
+  ): Promise<GameApplication> {
     const events = new EventBus<GameEventMap>();
     const input = new InputManager(window);
     const world = await RapierPhysicsWorld.create();
     const session: GameSession = startedLobby ? new NetworkSession(startedLobby) : new LocalSession();
-    const simulation = new GameSimulation(world, events, session.players, session.localPlayerId);
+    const simulation = new GameSimulation(world, events, session.players, session.localPlayerId, matchSettings);
     const runtime: {
       renderer?: GameRenderer;
       camera?: CameraController;
       audio?: AudioManager;
+      cameraDistance?: number;
+      fieldOfView?: number;
+      bloom?: number;
+      volume?: number;
     } = {};
 
-    const ui = new UIManager(root, {
-      onCameraDistance: (value) => runtime.camera?.setDistance(value),
-      onFieldOfView: (value) => runtime.camera?.setFieldOfView(value),
-      onBloom: (value) => runtime.renderer?.setBloom(value),
-      onVolume: (value) => runtime.audio?.setVolume(value),
-    });
+    const ui = new UIManager(
+      root,
+      {
+        onCameraDistance: (value) => {
+          runtime.cameraDistance = value;
+          runtime.camera?.setDistance(value);
+        },
+        onFieldOfView: (value) => {
+          runtime.fieldOfView = value;
+          runtime.camera?.setFieldOfView(value);
+        },
+        onBloom: (value) => {
+          runtime.bloom = value;
+          runtime.renderer?.setBloom(value);
+        },
+        onVolume: (value) => {
+          runtime.volume = value;
+          runtime.audio?.setVolume(value);
+        },
+      },
+      {
+        multiplayer: startedLobby !== null,
+        host: startedLobby !== null && startedLobby.playerId === startedLobby.hostId,
+        onLeave,
+        onResetMatch: () => startedLobby?.client.controlMatch('reset'),
+        onStopMatch: () => startedLobby?.client.controlMatch('stop'),
+      },
+    );
     const renderer = new GameRenderer(ui.renderContainer(), events, session.players, session.localPlayerId);
     const camera = new CameraController(renderer.camera, world, input, events);
     const audio = new AudioManager(events);
     runtime.renderer = renderer;
     runtime.camera = camera;
     runtime.audio = audio;
+    if (runtime.cameraDistance !== undefined) camera.setDistance(runtime.cameraDistance);
+    if (runtime.fieldOfView !== undefined) camera.setFieldOfView(runtime.fieldOfView);
+    if (runtime.bloom !== undefined) renderer.setBloom(runtime.bloom);
+    if (runtime.volume !== undefined) audio.setVolume(runtime.volume);
     let tick = 0;
     let guestFrame: AuthoritativeFrame | null = null;
     let lastGuestFrameSequence = -1;
-    const guestInterpolator = new AuthoritativeFrameInterpolator(NETWORK_CONFIG.interpolationDelaySeconds);
+    const snapshotInterval = Math.max(1, Math.round(RUNTIME_CONFIG.physicsHz / NETWORK_CONFIG.snapshotRate));
+    const guestInterpolator = new AuthoritativeFrameInterpolator(
+      NETWORK_CONFIG.interpolationDelaySeconds,
+      RUNTIME_CONFIG.physicsHz,
+      NETWORK_CONFIG.maximumExtrapolationSeconds,
+    );
+    let endedSeconds = 0;
+    let finishMatchSent = false;
     const loop = new GameLoop(
       (deltaSeconds) => {
         const localCommand = input.sample();
         const commands = session.commandsForTick(tick, localCommand);
+        if (localCommand.toggleFpsCounter) ui.toggleFpsCounter();
         camera.handleCommand(localCommand);
         if (session.authoritative) {
           simulation.updatePlayers(commands, deltaSeconds);
-          session.publish(simulation.authoritativeFrame(tick));
+          if (tick % snapshotInterval === 0) session.publish(simulation.authoritativeFrame(tick));
+          if (startedLobby && simulation.snapshot(1).match.phase === 'ended') {
+            endedSeconds += deltaSeconds;
+            if (!finishMatchSent && endedSeconds >= 2.5) {
+              finishMatchSent = true;
+              startedLobby.client.finishMatch();
+            }
+          } else {
+            endedSeconds = 0;
+          }
         } else {
           const nextFrame = session.latestFrame();
           if (nextFrame && nextFrame.sequence > lastGuestFrameSequence) {
@@ -100,17 +156,40 @@ export class GameApplication {
         renderer.update(snapshot, renderedCars);
         camera.update(snapshot, deltaSeconds);
         ui.update(snapshot, camera.modeName());
+        ui.updateFrameRate(deltaSeconds);
         renderer.render(deltaSeconds);
       },
     );
-    return new GameApplication(loop, simulation, renderer, camera, input, audio, ui, session, events);
+    const sessionUnsubscribes = startedLobby ? [
+      startedLobby.client.onError(onLeave),
+      startedLobby.client.onRemoved(onLeave),
+      startedLobby.client.onMatchControl((action) => {
+        if (action === 'reset') simulation.resetMatch();
+        else simulation.stopMatch();
+      }),
+      startedLobby.client.onReturnedToLobby(onReturnToLobby),
+    ] : [];
+    const unsubscribeSessionError = (): void => sessionUnsubscribes.forEach((unsubscribe) => unsubscribe());
+    return new GameApplication(
+      loop,
+      simulation,
+      renderer,
+      camera,
+      input,
+      audio,
+      ui,
+      session,
+      events,
+      unsubscribeSessionError,
+    );
   }
 
   start(): void { this.loop.start(); }
 
-  dispose(): void {
+  dispose(disconnect = true): void {
     this.loop.stop();
-    this.session.dispose();
+    this.unsubscribeSessionError?.();
+    if (disconnect) this.session.dispose();
     this.camera.dispose();
     this.audio.dispose();
     this.input.dispose();

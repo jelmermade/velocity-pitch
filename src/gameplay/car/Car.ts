@@ -7,6 +7,7 @@ import type { Transform } from '../../core/types/Transform';
 import { ZERO, type Vec3 } from '../../core/math/Vector3';
 import { CarController } from './CarController';
 import type { CarState } from './CarState';
+import { WHEEL_CONNECTIONS } from './WheelState';
 
 export interface CarSpawn {
   readonly position: Vec3;
@@ -17,13 +18,6 @@ export const DEFAULT_CAR_SPAWN: CarSpawn = Object.freeze({
   position: { x: 0, y: 0.62, z: 23 },
   rotation: IDENTITY_QUAT,
 });
-const WHEEL_OFFSETS = [
-  { x: -0.92, z: -1.05 },
-  { x: 0.92, z: -1.05 },
-  { x: -0.92, z: 1.05 },
-  { x: 0.92, z: 1.05 },
-] as const;
-
 export class Car {
   private readonly body: PhysicsBody;
   private readonly controller: CarController;
@@ -36,8 +30,8 @@ export class Car {
     private readonly spawn: CarSpawn = DEFAULT_CAR_SPAWN,
   ) {
     this.controller = new CarController(tuning);
-    this.initialWheels = WHEEL_OFFSETS.map(({ x, z }) => ({
-      connectionPoint: { x, y: spawn.position.y - 0.2, z: spawn.position.z + z },
+    this.initialWheels = WHEEL_CONNECTIONS.map(({ x, y, z }) => ({
+      connectionPoint: { x, y: spawn.position.y + y, z: spawn.position.z + z },
       contactPoint: { x, y: 0, z: spawn.position.z + z },
       position: { x, y: tuning.wheelRadius, z: spawn.position.z + z },
       grounded: true,

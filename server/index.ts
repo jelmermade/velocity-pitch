@@ -1,6 +1,14 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
-import type { ClientLobbyMessage, LobbyPlayer, ServerLobbyMessage } from '../src/networking/LobbyProtocol';
+import type {
+  ClientLobbyMessage,
+  LobbyPlayer,
+  LobbySummary,
+  MatchControlAction,
+  ServerLobbyMessage,
+  TeamId,
+} from '../src/networking/LobbyProtocol';
+import { sanitizeMatchSettings, type MatchSettings } from '../src/gameplay/match/MatchSettings';
 
 const port = Number(process.env.MULTIPLAYER_PORT ?? 8787);
 const host = process.env.MULTIPLAYER_HOST ?? '0.0.0.0';
@@ -17,6 +25,8 @@ interface Lobby {
   readonly hostId: string;
   readonly clients: Map<string, ClientConnection>;
   readonly players: Map<string, LobbyPlayer>;
+  readonly passwordHash: Buffer | null;
+  settings: MatchSettings;
   started: boolean;
 }
 
@@ -41,12 +51,16 @@ const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage
     send(connection.socket, { type: 'error', message: 'Invalid network message' });
     return;
   }
+  if (message.type === 'listLobbies') {
+    send(connection.socket, { type: 'lobbyList', lobbies: publicLobbyList() });
+    return;
+  }
   if (message.type === 'createLobby') {
-    createLobby(connection, message.playerName);
+    createLobby(connection, message.playerName, message.settings, message.password);
     return;
   }
   if (message.type === 'joinLobby') {
-    joinLobby(connection, message.lobbyId, message.playerName);
+    joinLobby(connection, message.lobbyId, message.playerName, message.password);
     return;
   }
   const lobby = connection.lobbyId ? lobbies.get(connection.lobbyId) : undefined;
@@ -55,9 +69,57 @@ const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage
     return;
   }
   if (message.type === 'startMatch') {
-    if (connection.playerId !== lobby.hostId) return;
+    if (connection.playerId !== lobby.hostId || lobby.started) return;
     lobby.started = true;
-    broadcast(lobby, { type: 'matchStarted', players: [...lobby.players.values()], hostId: lobby.hostId });
+    broadcast(lobby, {
+      type: 'matchStarted',
+      players: [...lobby.players.values()],
+      hostId: lobby.hostId,
+      settings: lobby.settings,
+    });
+    return;
+  }
+  if (message.type === 'setPlayerTeam') {
+    if (connection.playerId !== lobby.hostId || lobby.started) return;
+    const player = lobby.players.get(message.playerId);
+    const requestedTeam: unknown = message.team;
+    if (!player || !isTeamId(requestedTeam)) return;
+    lobby.players.set(player.id, { ...player, team: requestedTeam });
+    broadcast(lobby, { type: 'roster', players: [...lobby.players.values()] });
+    return;
+  }
+  if (message.type === 'kickPlayer') {
+    if (connection.playerId !== lobby.hostId || lobby.started || message.playerId === lobby.hostId) return;
+    const kicked = lobby.clients.get(message.playerId);
+    if (!kicked) return;
+    lobby.clients.delete(message.playerId);
+    lobby.players.delete(message.playerId);
+    kicked.lobbyId = null;
+    send(kicked.socket, { type: 'removedFromLobby', reason: 'You were kicked by the host' });
+    broadcast(lobby, { type: 'roster', players: [...lobby.players.values()] });
+    return;
+  }
+  if (message.type === 'matchControl') {
+    if (connection.playerId !== lobby.hostId || !lobby.started) return;
+    const requestedAction: unknown = message.action;
+    if (!isMatchControlAction(requestedAction)) return;
+    broadcast(lobby, { type: 'matchControl', action: requestedAction });
+    return;
+  }
+  if (message.type === 'finishMatch') {
+    if (connection.playerId !== lobby.hostId || !lobby.started) return;
+    lobby.started = false;
+    broadcast(lobby, {
+      type: 'returnedToLobby',
+      players: [...lobby.players.values()],
+      settings: lobby.settings,
+    });
+    return;
+  }
+  if (message.type === 'updateMatchSettings') {
+    if (connection.playerId !== lobby.hostId || lobby.started) return;
+    lobby.settings = sanitizeMatchSettings(message.settings);
+    broadcast(lobby, { type: 'matchSettings', settings: lobby.settings });
     return;
   }
   if (message.type === 'input') {
@@ -79,7 +141,12 @@ const handleMessage = (connection: ClientConnection, message: ClientLobbyMessage
   }
 };
 
-const createLobby = (connection: ClientConnection, playerName: string): void => {
+const createLobby = (
+  connection: ClientConnection,
+  playerName: string,
+  settings: MatchSettings,
+  password: string,
+): void => {
   if (connection.lobbyId) return;
   let lobbyId = createLobbyId();
   while (lobbies.has(lobbyId)) lobbyId = createLobbyId();
@@ -89,14 +156,27 @@ const createLobby = (connection: ClientConnection, playerName: string): void => 
     hostId: connection.playerId,
     clients: new Map([[connection.playerId, connection]]),
     players: new Map([[connection.playerId, player]]),
+    passwordHash: hashPassword(password),
+    settings: sanitizeMatchSettings(settings),
     started: false,
   };
   connection.lobbyId = lobbyId;
   lobbies.set(lobbyId, lobby);
-  send(connection.socket, { type: 'lobbyJoined', lobbyId, playerId: connection.playerId, players: [player] });
+  send(connection.socket, {
+    type: 'lobbyJoined',
+    lobbyId,
+    playerId: connection.playerId,
+    players: [player],
+    settings: lobby.settings,
+  });
 };
 
-const joinLobby = (connection: ClientConnection, requestedLobbyId: string, playerName: string): void => {
+const joinLobby = (
+  connection: ClientConnection,
+  requestedLobbyId: string,
+  playerName: string,
+  password: string,
+): void => {
   if (connection.lobbyId) return;
   const lobbyId = requestedLobbyId.trim().toUpperCase();
   const lobby = lobbies.get(lobbyId);
@@ -106,6 +186,10 @@ const joinLobby = (connection: ClientConnection, requestedLobbyId: string, playe
   }
   if (lobby.started) {
     send(connection.socket, { type: 'error', message: 'This match has already started' });
+    return;
+  }
+  if (!passwordMatches(lobby.passwordHash, password)) {
+    send(connection.socket, { type: 'error', message: 'Incorrect lobby password' });
     return;
   }
   if (lobby.players.size >= maximumPlayers) {
@@ -122,6 +206,7 @@ const joinLobby = (connection: ClientConnection, requestedLobbyId: string, playe
     lobbyId,
     playerId: connection.playerId,
     players: [...lobby.players.values()],
+    settings: lobby.settings,
   });
   broadcast(lobby, { type: 'roster', players: [...lobby.players.values()] });
 };
@@ -135,7 +220,10 @@ const disconnect = (connection: ClientConnection): void => {
   lobby.players.delete(connection.playerId);
   connection.lobbyId = null;
   if (connection.playerId === lobby.hostId || lobby.players.size === 0) {
-    lobby.clients.forEach((client) => send(client.socket, { type: 'error', message: 'The lobby host disconnected' }));
+    lobby.clients.forEach((client) => {
+      client.lobbyId = null;
+      send(client.socket, { type: 'removedFromLobby', reason: 'The lobby host disconnected' });
+    });
     lobbies.delete(lobby.id);
     return;
   }
@@ -150,6 +238,35 @@ const createPlayer = (id: string, rawName: string, team: LobbyPlayer['team'], is
 });
 
 const createLobbyId = (): string => randomBytes(3).toString('hex').toUpperCase();
+
+const publicLobbyList = (): readonly LobbySummary[] => [...lobbies.values()]
+  .filter((lobby) => !lobby.started && lobby.players.size < maximumPlayers)
+  .map((lobby) => ({
+    id: lobby.id,
+    hostName: lobby.players.get(lobby.hostId)?.name ?? 'Driver',
+    playerCount: lobby.players.size,
+    maximumPlayers,
+    passwordProtected: lobby.passwordHash !== null,
+  }));
+
+const normalizePassword = (password: unknown): string => (
+  typeof password === 'string' ? password.trim().slice(0, 64) : ''
+);
+
+const hashPassword = (password: unknown): Buffer | null => {
+  const normalized = normalizePassword(password);
+  return normalized ? createHash('sha256').update(normalized).digest() : null;
+};
+
+const passwordMatches = (expected: Buffer | null, password: unknown): boolean => {
+  if (!expected) return true;
+  const candidate = hashPassword(password);
+  return candidate !== null && timingSafeEqual(expected, candidate);
+};
+
+const isTeamId = (value: unknown): value is TeamId => value === 'azure' || value === 'coral';
+
+const isMatchControlAction = (value: unknown): value is MatchControlAction => value === 'reset' || value === 'stop';
 
 const decodePayload = (payload: RawData): string => {
   if (payload instanceof ArrayBuffer) return Buffer.from(payload).toString('utf8');

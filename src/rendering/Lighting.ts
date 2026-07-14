@@ -12,7 +12,7 @@ export const configureLighting = (scene: THREE.Scene, renderer: THREE.WebGLRende
   const key = new THREE.DirectionalLight(0xd9f8ff, 3.5);
   key.position.set(-16, 30, 10);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.left = -(ARENA_TUNING.halfWidth + 8);
   key.shadow.camera.right = ARENA_TUNING.halfWidth + 8;
   key.shadow.camera.top = ARENA_TUNING.halfLength + 10;

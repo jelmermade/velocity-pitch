@@ -76,8 +76,13 @@ export class CarController {
       body.applyTorqueImpulse(scale(axes.up, steeringImpulse));
     }
 
-    const boostRequested = command.boost && this.ceilingRecoveryRemaining === 0;
-    const boosting = this.boost.update(boostRequested, this.tuning.boostConsumption, this.tuning.boostRecharge, deltaSeconds);
+    const boosting = this.boost.update(
+      command.boost,
+      this.tuning.boostConsumption,
+      this.tuning.boostRecharge,
+      deltaSeconds,
+      this.ceilingRecoveryRemaining === 0,
+    );
     if (boosting) {
       const surfaceBoostScale = suspension.grounded
         ? clamp(

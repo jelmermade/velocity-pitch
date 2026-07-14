@@ -18,7 +18,8 @@ export class AuthoritativeFrameInterpolator {
 
   constructor(
     private readonly interpolationDelaySeconds: number,
-    private readonly physicsHz = RUNTIME_CONFIG.physicsHz,
+    private readonly physicsHz: number = RUNTIME_CONFIG.physicsHz,
+    private readonly maximumExtrapolationSeconds: number = 0,
   ) {}
 
   push(frame: AuthoritativeFrame, receivedAtSeconds: number): void {
@@ -36,21 +37,35 @@ export class AuthoritativeFrameInterpolator {
       - this.interpolationDelaySeconds * this.physicsHz
       + elapsedSinceNewest * this.physicsHz;
     const targetSequence = Math.min(
-      newest.frame.sequence,
+      newest.frame.sequence + this.maximumExtrapolationSeconds * this.physicsHz,
       Math.max(this.lastTargetSequence, desiredSequence),
     );
     this.lastTargetSequence = targetSequence;
 
+    const oldest = this.frames[0];
+    if (!oldest || targetSequence <= oldest.frame.sequence) return oldest?.frame ?? newest.frame;
     const newerIndex = this.frames.findIndex(({ frame }) => frame.sequence >= targetSequence);
-    if (newerIndex <= 0) return this.frames[Math.max(0, newerIndex)]?.frame ?? newest.frame;
+    if (newerIndex < 0) {
+      const older = this.frames.at(-2)?.frame;
+      if (!older) return newest.frame;
+      return interpolateBySequence(older, newest.frame, targetSequence);
+    }
     const older = this.frames[newerIndex - 1]?.frame;
     const newer = this.frames[newerIndex]?.frame;
     if (!older || !newer) return newest.frame;
-    const sequenceRange = newer.sequence - older.sequence;
-    const alpha = sequenceRange > 0 ? (targetSequence - older.sequence) / sequenceRange : 1;
-    return interpolateFrames(older, newer, alpha);
+    return interpolateBySequence(older, newer, targetSequence);
   }
 }
+
+const interpolateBySequence = (
+  older: AuthoritativeFrame,
+  newer: AuthoritativeFrame,
+  targetSequence: number,
+): AuthoritativeFrame => {
+  const sequenceRange = newer.sequence - older.sequence;
+  const alpha = sequenceRange > 0 ? (targetSequence - older.sequence) / sequenceRange : 1;
+  return interpolateFrames(older, newer, alpha);
+};
 
 export const interpolateFrames = (
   previous: AuthoritativeFrame,

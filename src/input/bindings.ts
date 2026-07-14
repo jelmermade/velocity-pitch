@@ -10,6 +10,7 @@ export const BINDINGS = Object.freeze({
   airRollLeft: 'KeyQ',
   airRollRight: 'KeyE',
   ballCamera: 'Space',
+  fpsCounter: 'F2',
   freeCamera: 'F3',
   pause: 'Escape',
 });

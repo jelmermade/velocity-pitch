@@ -88,17 +88,20 @@ export class GrassFieldView {
 }
 
 const createGrassTexture = (): THREE.DataTexture => {
-  const width = 256;
-  const height = 384;
+  const width = 512;
+  const height = 768;
   const data = new Uint8Array(width * height * 4);
   for (let y = 0; y < height; y += 1) {
-    const stripe = Math.floor(y / (height / 12)) % 2;
+    const stripe = Math.floor(y / (height / 14)) % 2;
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
-      const grain = hash(x, y) * 13 - 6;
-      data[index] = 30 + stripe * 5 + grain;
-      data[index + 1] = 91 + stripe * 13 + grain;
-      data[index + 2] = 49 + stripe * 6 + grain * 0.5;
+      const fineGrain = hash(x, y) * 12 - 6;
+      const soilVariation = hash(Math.floor(x / 18), Math.floor(y / 18)) * 10 - 5;
+      const blade = hash(x * 3 + 11, y * 5 + 7) > 0.965 ? 18 : 0;
+      const wornCenter = Math.max(0, 1 - Math.abs(x / width - 0.5) * 8) * 4;
+      data[index] = 24 + stripe * 4 + fineGrain + soilVariation + blade * 0.25 + wornCenter;
+      data[index + 1] = 78 + stripe * 12 + fineGrain + soilVariation + blade - wornCenter;
+      data[index + 2] = 38 + stripe * 5 + fineGrain * 0.45 + soilVariation * 0.6 + blade * 0.3;
       data[index + 3] = 255;
     }
   }
@@ -109,6 +112,7 @@ const createGrassTexture = (): THREE.DataTexture => {
   texture.wrapT = THREE.ClampToEdgeWrapping;
   texture.magFilter = THREE.LinearFilter;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.anisotropy = 4;
   texture.generateMipmaps = true;
   texture.needsUpdate = true;
   return texture;

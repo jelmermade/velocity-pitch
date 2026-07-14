@@ -1,7 +1,8 @@
 import { FixedStepClock } from '../core/time/FixedStepClock';
+import { RUNTIME_CONFIG } from './RuntimeConfig';
 
 export class GameLoop {
-  private readonly clock = new FixedStepClock();
+  private readonly clock = new FixedStepClock(1 / RUNTIME_CONFIG.physicsHz);
   private animationFrame = 0;
   private lastRenderSeconds: number | null = null;
 

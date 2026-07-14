@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import type { CarState } from '../../gameplay/car/CarState';
+import { WHEEL_CONNECTIONS } from '../../gameplay/car/WheelState';
 import type { TeamId } from '../../networking/LobbyProtocol';
 
 export class CarView {
@@ -8,19 +9,16 @@ export class CarView {
   private readonly wheels: THREE.Group[] = [];
   private readonly boostFlames: THREE.Mesh[] = [];
 
-  constructor(private readonly scene: THREE.Scene, team: TeamId = 'azure') {
+  constructor(team: TeamId = 'azure') {
     const bodyColor = team === 'azure' ? 0x12afbd : 0xd94e47;
     const highlightColor = team === 'azure' ? 0x67e2df : 0xff8b80;
     const body = new THREE.MeshStandardMaterial({ color: bodyColor, metalness: 0.72, roughness: 0.22 });
     const bodyHighlight = new THREE.MeshStandardMaterial({ color: highlightColor, metalness: 0.58, roughness: 0.2 });
     const carbon = new THREE.MeshStandardMaterial({ color: 0x071116, metalness: 0.5, roughness: 0.22 });
-    const glass = new THREE.MeshPhysicalMaterial({
+    const glass = new THREE.MeshStandardMaterial({
       color: 0x0b2e39,
-      metalness: 0.15,
-      roughness: 0.08,
-      transmission: 0.28,
-      clearcoat: 1,
-      clearcoatRoughness: 0.12,
+      metalness: 0.35,
+      roughness: 0.16,
     });
 
     this.addRoundedPart(1.84, 0.72, 2.72, 0.18, body, 0, 0, 0);
@@ -61,8 +59,10 @@ export class CarView {
         return;
       }
       wheel.visible = true;
-      wheel.position.set(stateWheel.position.x, stateWheel.position.y, stateWheel.position.z);
-      wheel.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+      const connection = WHEEL_CONNECTIONS[index];
+      if (!connection) return;
+      wheel.position.set(connection.x, connection.y - stateWheel.suspensionLength, connection.z);
+      wheel.quaternion.identity();
       wheel.rotateY(-stateWheel.steeringAngle);
       wheel.rotateX(stateWheel.spinAngle);
     });
@@ -78,10 +78,6 @@ export class CarView {
       (Array.isArray(material) ? material : [material]).forEach((entry) => materials.add(entry));
     };
     this.group.traverse(collect);
-    this.wheels.forEach((wheel) => {
-      wheel.traverse(collect);
-      this.scene.remove(wheel);
-    });
     geometries.forEach((geometry) => geometry.dispose());
     materials.forEach((material) => material.dispose());
   }
@@ -120,7 +116,7 @@ export class CarView {
   }
 
   private createWheels(carbon: THREE.Material): void {
-    const tireGeometry = new THREE.CylinderGeometry(0.34, 0.34, 0.32, 24, 1, false);
+    const tireGeometry = new THREE.CylinderGeometry(0.34, 0.34, 0.32, 16, 1, false);
     tireGeometry.rotateZ(Math.PI / 2);
     const rimGeometry = new THREE.CylinderGeometry(0.18, 0.18, 0.33, 10);
     rimGeometry.rotateZ(Math.PI / 2);
@@ -132,8 +128,9 @@ export class CarView {
       tire.castShadow = true;
       rim.castShadow = true;
       wheel.add(tire, rim);
+      wheel.name = `wheel-${index}`;
       this.wheels.push(wheel);
-      this.scene.add(wheel);
+      this.group.add(wheel);
     }
   }
 

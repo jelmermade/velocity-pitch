@@ -24,6 +24,15 @@ describe('authoritative frame interpolation', () => {
 
     expect(interpolator.sample(0.12)?.cars.guest?.transform.position.z).toBeGreaterThanOrEqual(beforeLatePacket);
   });
+
+  it('briefly extrapolates instead of freezing when the next packet is late', () => {
+    const interpolator = new AuthoritativeFrameInterpolator(0.05, 120, 0.05);
+    interpolator.push(frame(0, 0), 0);
+    interpolator.push(frame(6, 6), 0.05);
+
+    expect(interpolator.sample(0.11)?.cars.guest?.transform.position.z).toBeCloseTo(7.2);
+    expect(interpolator.sample(0.2)?.cars.guest?.transform.position.z).toBeCloseTo(12);
+  });
 });
 
 const frame = (sequence: number, z: number): AuthoritativeFrame => {

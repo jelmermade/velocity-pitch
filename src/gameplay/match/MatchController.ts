@@ -81,6 +81,23 @@ export class MatchController {
     if (this.phase === 'replay') this.finishGoalSequence();
   }
 
+  reset(): void {
+    this.scores.reset();
+    this.timeRemaining = MATCH_TUNING.durationSeconds;
+    this.lastGoalTeam = null;
+    this.endsAfterReplay = false;
+    this.paused = false;
+    this.beginKickoff();
+  }
+
+  stop(): void {
+    const scores = this.scores.scores();
+    const winner = scores.azure === scores.coral ? 'draw' : scores.azure > scores.coral ? 'azure' : 'coral';
+    this.phase = 'ended';
+    this.paused = false;
+    this.events.emit('matchEnded', { winner });
+  }
+
   state(): MatchState {
     const scores = this.scores.scores();
     return {

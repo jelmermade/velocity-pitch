@@ -7,6 +7,7 @@ export interface PlayerCommand {
   readonly boost: boolean;
   readonly powerslide: boolean;
   readonly toggleBallCamera: boolean;
+  readonly toggleFpsCounter: boolean;
   readonly toggleFreeCamera: boolean;
   readonly togglePause: boolean;
 }
@@ -20,6 +21,7 @@ export const NEUTRAL_COMMAND: PlayerCommand = Object.freeze({
   boost: false,
   powerslide: false,
   toggleBallCamera: false,
+  toggleFpsCounter: false,
   toggleFreeCamera: false,
   togglePause: false,
 });

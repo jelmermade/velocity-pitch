@@ -1,6 +1,6 @@
 import { BALL_TUNING } from '../../core/config/BallTuning';
 import { IDENTITY_QUAT } from '../../core/math/Quaternion';
-import type { Vec3 } from '../../core/math/Vector3';
+import { add, scale, sub, type Vec3 } from '../../core/math/Vector3';
 import type { PhysicsBody } from '../../physics/PhysicsBody';
 import type { PhysicsWorld } from '../../physics/PhysicsWorld';
 import type { BallState } from './BallState';
@@ -29,6 +29,12 @@ export class Ball {
       linearVelocity: this.body.linearVelocity(),
       angularVelocity: this.body.angularVelocity(),
     };
+  }
+
+  amplifyVelocityChange(previousVelocity: Vec3, multiplier: number): void {
+    if (multiplier <= 1) return;
+    const currentVelocity = this.body.linearVelocity();
+    this.body.setLinearVelocity(add(previousVelocity, scale(sub(currentVelocity, previousVelocity), multiplier)));
   }
 
   reset(): void {

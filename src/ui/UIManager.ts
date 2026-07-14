@@ -3,6 +3,8 @@ import type { SettingsHandlers } from './menus/SettingsMenu';
 import { SettingsMenu } from './menus/SettingsMenu';
 import { PauseMenu } from './menus/PauseMenu';
 
+const FPS_STORAGE_KEY = 'velocity-pitch:show-fps';
+
 export class UIManager {
   private readonly hud: HTMLElement;
   private readonly score: HTMLElement;
@@ -12,10 +14,24 @@ export class UIManager {
   private readonly countdown: HTMLElement;
   private readonly announcement: HTMLElement;
   private readonly cameraMode: HTMLElement;
+  private readonly fpsCounter: HTMLElement;
   private readonly pauseMenu: PauseMenu;
   private readonly settingsMenu: SettingsMenu;
+  private fpsVisible = false;
+  private smoothedFrameSeconds = 1 / 60;
+  private fpsRefreshElapsed = 0;
 
-  constructor(private readonly root: HTMLElement, settings: SettingsHandlers) {
+  constructor(
+    private readonly root: HTMLElement,
+    settings: Omit<SettingsHandlers, 'onShowFps'>,
+    actions: {
+      readonly multiplayer: boolean;
+      readonly host: boolean;
+      readonly onLeave: () => void;
+      readonly onResetMatch: () => void;
+      readonly onStopMatch: () => void;
+    },
+  ) {
     root.innerHTML = `
       <div class="game-shell">
         <div class="render-layer" data-render-layer></div>
@@ -29,10 +45,12 @@ export class UIManager {
           <section class="announcement" data-announcement></section>
           <div class="countdown" data-countdown></div>
           <aside class="camera-tag">CAM <b data-camera-mode>BALL</b></aside>
+          <aside class="fps-counter" data-fps-counter hidden>FPS <b>60</b></aside>
           <aside class="controls-hint">
             <span><b>WASD</b> DRIVE / AIR</span><span><b>RMB</b> JUMP + FLIP</span>
             <span><b>LMB</b> BOOST</span><span><b>SHIFT</b> SLIDE</span>
             <span><b>Q E</b> AIR ROLL</span><span><b>SPACE</b> BALL CAM</span>
+            <span><b>F2</b> FPS</span><span><b>F3</b> FREE CAM</span>
           </aside>
           <div class="boost-gauge" aria-label="Boost">
             <span class="boost-label">BOOST</span>
@@ -44,6 +62,9 @@ export class UIManager {
               <p class="eyebrow">MATCH SUSPENDED</p>
               <h1>PAUSED</h1>
               <button type="button" data-open-settings>SETTINGS</button>
+              ${actions.host ? '<button type="button" data-reset-match>RESET MATCH</button>' : ''}
+              ${actions.host ? '<button class="stop-match" type="button" data-stop-match>STOP MATCH</button>' : ''}
+              <button class="leave-match" type="button" data-leave-match>${actions.multiplayer ? 'LEAVE LOBBY' : 'LEAVE MATCH'}</button>
               <p>Press <kbd>ESC</kbd> to return to the pitch</p>
             </div>
           </section>
@@ -53,8 +74,9 @@ export class UIManager {
               <h1>SETTINGS</h1>
               ${this.range('Camera distance', 'camera-distance', 6, 13, 0.1, 8.8)}
               ${this.range('Field of view', 'field-of-view', 60, 95, 1, 72)}
-              ${this.range('Bloom', 'bloom', 0, 1.2, 0.05, 0.48)}
+              ${this.range('Bloom', 'bloom', 0, 1.2, 0.05, 0)}
               ${this.range('Volume', 'volume', 0, 1, 0.05, 0.55)}
+              <label class="setting-toggle"><span>Show FPS <small>F2</small></span><input name="show-fps" type="checkbox"></label>
               <button type="button" data-close-settings>BACK</button>
             </div>
           </section>
@@ -68,11 +90,29 @@ export class UIManager {
     this.countdown = this.require('[data-countdown]');
     this.announcement = this.require('[data-announcement]');
     this.cameraMode = this.require('[data-camera-mode]');
-    this.pauseMenu = new PauseMenu(root);
-    this.settingsMenu = new SettingsMenu(root, settings);
+    this.fpsCounter = this.require('[data-fps-counter]');
+    this.pauseMenu = new PauseMenu(root, actions);
+    this.settingsMenu = new SettingsMenu(root, {
+      ...settings,
+      onShowFps: (visible) => this.setFpsVisible(visible),
+    });
+    this.setFpsVisible(this.loadFpsPreference());
   }
 
   renderContainer(): HTMLElement { return this.hud; }
+
+  toggleFpsCounter(): void { this.setFpsVisible(!this.fpsVisible); }
+
+  updateFrameRate(deltaSeconds: number): void {
+    if (!this.fpsVisible || deltaSeconds <= 0) return;
+    const blend = 1 - Math.exp(-deltaSeconds * 5);
+    this.smoothedFrameSeconds += (deltaSeconds - this.smoothedFrameSeconds) * blend;
+    this.fpsRefreshElapsed += deltaSeconds;
+    if (this.fpsRefreshElapsed < 0.25) return;
+    this.fpsRefreshElapsed = 0;
+    const value = this.fpsCounter.querySelector('b');
+    if (value) value.textContent = Math.round(1 / this.smoothedFrameSeconds).toString();
+  }
 
   update(snapshot: SimulationSnapshot, cameraMode: string): void {
     const { match, car } = snapshot;
@@ -86,16 +126,32 @@ export class UIManager {
     if (!match.paused) this.settingsMenu.hide();
 
     if (match.phase === 'goalExplosion') this.announcement.textContent = 'GOAL // IMPACT WAVE';
-    else if (match.phase === 'replay') {
-      const progress = Math.round(match.replayProgress * 100);
-      this.announcement.textContent = `GOAL REPLAY // ${progress}% // RMB TO SKIP`;
-    }
+    else if (match.phase === 'replay') this.announcement.textContent = 'GOAL REPLAY // RMB TO SKIP';
     else if (match.phase === 'overtime') this.announcement.textContent = 'OVERTIME // NEXT GOAL WINS';
     else if (match.phase === 'ended') this.announcement.textContent = 'MATCH COMPLETE';
     else this.announcement.textContent = '';
   }
 
   dispose(): void { this.root.replaceChildren(); }
+
+  private setFpsVisible(visible: boolean): void {
+    this.fpsVisible = visible;
+    this.fpsCounter.hidden = !visible;
+    this.settingsMenu.setShowFps(visible);
+    try {
+      window.localStorage.setItem(FPS_STORAGE_KEY, visible.toString());
+    } catch {
+      // Storage can be unavailable in privacy-restricted browser contexts.
+    }
+  }
+
+  private loadFpsPreference(): boolean {
+    try {
+      return window.localStorage.getItem(FPS_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
 
   private range(label: string, name: string, min: number, max: number, step: number, value: number): string {
     return `<label><span>${label}<output data-output="${name}">${value}</output></span><input name="${name}" type="range" min="${min}" max="${max}" step="${step}" value="${value}"></label>`;

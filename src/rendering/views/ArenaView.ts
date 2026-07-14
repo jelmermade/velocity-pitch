@@ -16,7 +16,7 @@ export class ArenaView {
       new GlassDomeView().group,
     );
     this.addGoalShells();
-    this.addGoalLights();
+    this.addGoalPresentation();
   }
 
   dispose(): void {
@@ -24,7 +24,7 @@ export class ArenaView {
     const materials = new Set<THREE.Material>();
     const textures = new Set<THREE.Texture>();
     this.group.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return;
+      if (!(object instanceof THREE.Mesh) && !(object instanceof THREE.LineSegments)) return;
       const geometry = object.geometry as THREE.BufferGeometry;
       const meshMaterial = object.material as THREE.Material | THREE.Material[];
       geometries.add(geometry);
@@ -61,20 +61,87 @@ export class ArenaView {
     this.group.add(mesh);
   }
 
-  private addGoalLights(): void {
-    const geometry = new THREE.BoxGeometry(0.22, 0.22, ARENA_TUNING.goalDepth);
+  private addGoalPresentation(): void {
     for (const zSign of [-1, 1] as const) {
       const color = zSign > 0 ? 0x2cd9ff : 0xff5b51;
-      const material = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 3.5 });
+      const team = zSign > 0 ? 'azure' : 'coral';
+      const frameMaterial = new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 2.6,
+        metalness: 0.65,
+        roughness: 0.22,
+      });
+      const glowMaterial = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.16,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const mouthZ = zSign * (ARENA_TUNING.halfLength + 0.12);
+      const centerZ = zSign * (ARENA_TUNING.halfLength + ARENA_TUNING.goalDepth / 2);
+      const frameThickness = 0.34;
+
+      const postGeometry = new THREE.BoxGeometry(frameThickness, ARENA_TUNING.goalHeight, frameThickness);
       for (const xSign of [-1, 1] as const) {
-        const rail = new THREE.Mesh(geometry, material);
-        rail.position.set(
-          xSign * ARENA_TUNING.goalHalfWidth,
-          0.18,
-          zSign * (ARENA_TUNING.halfLength + ARENA_TUNING.goalDepth / 2),
+        const post = new THREE.Mesh(postGeometry, frameMaterial);
+        post.position.set(xSign * ARENA_TUNING.goalHalfWidth, ARENA_TUNING.goalHeight / 2, mouthZ);
+        post.name = `goal-${team}-post`;
+        this.group.add(post);
+
+        const depthRail = new THREE.Mesh(
+          new THREE.BoxGeometry(frameThickness * 0.62, frameThickness * 0.62, ARENA_TUNING.goalDepth),
+          frameMaterial,
         );
-        this.group.add(rail);
+        depthRail.position.set(xSign * ARENA_TUNING.goalHalfWidth, 0.2, centerZ);
+        this.group.add(depthRail);
       }
+
+      const crossbar = new THREE.Mesh(
+        new THREE.BoxGeometry(ARENA_TUNING.goalHalfWidth * 2 + frameThickness, frameThickness, frameThickness),
+        frameMaterial,
+      );
+      crossbar.position.set(0, ARENA_TUNING.goalHeight, mouthZ);
+      crossbar.name = `goal-${team}-crossbar`;
+      this.group.add(crossbar);
+
+      const canopyRails = new THREE.Mesh(
+        new THREE.BoxGeometry(ARENA_TUNING.goalHalfWidth * 2, frameThickness * 0.5, ARENA_TUNING.goalDepth),
+        glowMaterial,
+      );
+      canopyRails.position.set(0, ARENA_TUNING.goalHeight + 0.06, centerZ);
+      this.group.add(canopyRails);
+
+      const goalFloor = new THREE.Mesh(
+        new THREE.PlaneGeometry(ARENA_TUNING.goalHalfWidth * 2 - 0.4, ARENA_TUNING.goalDepth - 0.3),
+        glowMaterial,
+      );
+      goalFloor.rotation.x = -Math.PI / 2;
+      goalFloor.position.set(0, 0.025, centerZ);
+      goalFloor.name = `goal-${team}-floor`;
+      this.group.add(goalFloor, this.createGoalNet(team, color, zSign));
     }
+  }
+
+  private createGoalNet(team: 'azure' | 'coral', color: number, zSign: -1 | 1): THREE.LineSegments {
+    const points: number[] = [];
+    const z = zSign * (ARENA_TUNING.halfLength + ARENA_TUNING.goalDepth - 0.42);
+    const columns = 10;
+    const rows = 5;
+    for (let column = 0; column <= columns; column += 1) {
+      const x = -ARENA_TUNING.goalHalfWidth + column * (ARENA_TUNING.goalHalfWidth * 2 / columns);
+      points.push(x, 0.12, z, x, ARENA_TUNING.goalHeight - 0.12, z);
+    }
+    for (let row = 0; row <= rows; row += 1) {
+      const y = 0.12 + row * ((ARENA_TUNING.goalHeight - 0.24) / rows);
+      points.push(-ARENA_TUNING.goalHalfWidth, y, z, ARENA_TUNING.goalHalfWidth, y, z);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+    const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.58 });
+    const net = new THREE.LineSegments(geometry, material);
+    net.name = `goal-${team}-net`;
+    return net;
   }
 }

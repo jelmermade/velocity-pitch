@@ -10,4 +10,9 @@ export class ScoreManager {
   scores(): { readonly azure: number; readonly coral: number } {
     return { azure: this.azure, coral: this.coral };
   }
+
+  reset(): void {
+    this.azure = 0;
+    this.coral = 0;
+  }
 }

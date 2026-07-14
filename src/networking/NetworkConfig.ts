@@ -15,4 +15,5 @@ export const NETWORK_CONFIG = Object.freeze({
   publicGameUrl: environment.VITE_PUBLIC_URL || window.location.origin,
   snapshotRate: 20,
   interpolationDelaySeconds: 0.06,
+  maximumExtrapolationSeconds: 0.05,
 });

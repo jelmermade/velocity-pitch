@@ -5,14 +5,7 @@ import { add, cross, dot, normalize, scale, sub, UP, type Vec3 } from '../../cor
 import type { PlayerCommand } from '../../input/PlayerCommand';
 import type { PhysicsBody } from '../../physics/PhysicsBody';
 import type { PhysicsWorld } from '../../physics/PhysicsWorld';
-import type { WheelState } from './WheelState';
-
-const CONNECTIONS: readonly Vec3[] = Object.freeze([
-  { x: -0.92, y: -0.2, z: -1.05 },
-  { x: 0.92, y: -0.2, z: -1.05 },
-  { x: -0.92, y: -0.2, z: 1.05 },
-  { x: 0.92, y: -0.2, z: 1.05 },
-]);
+import { WHEEL_CONNECTIONS, type WheelState } from './WheelState';
 
 export interface SuspensionResult {
   readonly grounded: boolean;
@@ -42,7 +35,7 @@ export class SuspensionSystem {
     let contactCount = 0;
     let contactNormalSum: Vec3 = { x: 0, y: 0, z: 0 };
 
-    CONNECTIONS.forEach((localConnection, index) => {
+    WHEEL_CONNECTIONS.forEach((localConnection, index) => {
       const rotatedConnection = this.rotate(rotation, localConnection);
       const connection = add(chassisPosition, rotatedConnection);
       const rayDirection = scale(axes.up, -1);

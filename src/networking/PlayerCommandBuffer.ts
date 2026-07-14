@@ -1,6 +1,6 @@
 import type { PlayerCommand } from '../input/PlayerCommand';
 
-const EDGE_FIELDS = ['jumpPressed', 'toggleBallCamera', 'toggleFreeCamera', 'togglePause'] as const;
+const EDGE_FIELDS = ['jumpPressed', 'toggleBallCamera', 'toggleFpsCounter', 'toggleFreeCamera', 'togglePause'] as const;
 
 export const mergeCommandEdges = (previous: PlayerCommand, latest: PlayerCommand): PlayerCommand => {
   const merged = { ...latest };
@@ -14,6 +14,7 @@ export const clearCommandEdges = (command: PlayerCommand): PlayerCommand => ({
   ...command,
   jumpPressed: false,
   toggleBallCamera: false,
+  toggleFpsCounter: false,
   toggleFreeCamera: false,
   togglePause: false,
 });
