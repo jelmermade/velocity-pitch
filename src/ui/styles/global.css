@@ -17,7 +17,7 @@ body { background: radial-gradient(circle at 50% 20%, #183844, #07141b 62%); }
 button, input { font: inherit; }
 button {
   border: 1px solid rgba(184, 255, 102, 0.65);
-  color: #efffe1;
+  color: var(--acid);
   background: rgba(85, 140, 45, 0.15);
   padding: 0.8rem 1.5rem;
   font-weight: 700;
@@ -53,8 +53,9 @@ canvas { display: block; width: 100%; height: 100%; }
 .announcement { position: absolute; top: 22%; width: 100%; text-align: center; font: 1.6rem 'Russo One', sans-serif; letter-spacing: 0.15em; color: var(--acid); text-shadow: 0 0 20px rgba(184, 255, 102, 0.8); }
 .camera-tag { position: absolute; top: 1.3rem; left: 1.5rem; color: #68868d; font-size: 0.72rem; letter-spacing: 0.18em; }
 .camera-tag b { color: var(--acid); }
-.fps-counter { position: absolute; top: 2.65rem; left: 1.5rem; display: flex; gap: 1.1rem; color: #68868d; font-size: 0.72rem; letter-spacing: 0.18em; }
-.fps-counter b { color: var(--azure); font-family: 'Russo One', sans-serif; }
+.debug-readout { position: absolute; top: 2.65rem; left: 1.5rem; display: grid; grid-template-rows: repeat(2, 0.9rem); gap: 0.38rem; color: #68868d; font-size: 0.72rem; letter-spacing: 0.18em; }
+.debug-readout b { color: var(--azure); font-family: 'Russo One', sans-serif; }
+.position-counter { grid-row: 2; }
 .player-scoreboard {
   position: absolute;
   z-index: 4;
@@ -92,7 +93,7 @@ canvas { display: block; width: 100%; height: 100%; }
 .boost-label { color: #ffcf66; font-size: 0.7rem; letter-spacing: 0.25em; }
 .boost-track { height: 0.35rem; margin-top: 0.65rem; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
 .boost-track i { display: block; width: 100%; height: 100%; transform-origin: left; background: linear-gradient(90deg, var(--coral), #ffcf55); box-shadow: 0 0 12px #ffa51f; }
-.controls-hint { position: absolute; bottom: 1.6rem; left: 1.5rem; display: grid; grid-template-columns: auto auto; gap: 0.3rem 1rem; color: #8da4aa; font-size: 0.62rem; letter-spacing: 0.06em; }
+.controls-hint { position: absolute; bottom: 1.6rem; left: 1.5rem; display: grid; grid-template-columns: auto auto; gap: 0.3rem 1rem; color: #8da4aa; font-size: 0.62rem; letter-spacing: 0.06em; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
 .controls-hint b { color: #d9ffff; }
 
 .modal { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: auto; background: linear-gradient(115deg, rgba(2, 12, 17, 0.88), rgba(8, 28, 34, 0.7)); backdrop-filter: blur(9px); }
@@ -105,6 +106,7 @@ canvas { display: block; width: 100%; height: 100%; }
 .eyebrow { color: var(--acid); font-weight: 700; letter-spacing: 0.22em; font-size: 0.72rem; }
 kbd { border: 1px solid #577079; padding: 0.12rem 0.35rem; color: #dfffff; }
 .settings-card label { display: block; margin: 1.25rem 0; text-align: left; }
+.settings-card { max-height: 90vh; overflow-y: auto; }
 .settings-card label span { display: flex; justify-content: space-between; margin-bottom: 0.45rem; color: #9cb4b9; }
 .settings-card output { color: var(--acid); }
 .settings-card input[type='range'] { width: 100%; accent-color: var(--acid); }

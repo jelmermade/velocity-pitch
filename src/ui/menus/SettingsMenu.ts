@@ -4,11 +4,13 @@ export interface SettingsHandlers {
   readonly onBloom: (value: number) => void;
   readonly onVolume: (value: number) => void;
   readonly onShowFps: (visible: boolean) => void;
+  readonly onShowPosition: (visible: boolean) => void;
 }
 
 export class SettingsMenu {
   private readonly element: HTMLElement;
   private readonly showFpsInput: HTMLInputElement;
+  private readonly showPositionInput: HTMLInputElement;
 
   constructor(root: HTMLElement, handlers: SettingsHandlers) {
     const element = root.querySelector<HTMLElement>('[data-settings]');
@@ -19,6 +21,7 @@ export class SettingsMenu {
     this.bindRange('bloom', handlers.onBloom);
     this.bindRange('volume', handlers.onVolume);
     this.showFpsInput = this.bindCheckbox('show-fps', handlers.onShowFps);
+    this.showPositionInput = this.bindCheckbox('show-position', handlers.onShowPosition);
     root.querySelector('[data-open-settings]')?.addEventListener('click', () => this.show());
     root.querySelector('[data-close-settings]')?.addEventListener('click', () => this.hide());
   }
@@ -26,6 +29,7 @@ export class SettingsMenu {
   show(): void { this.element.hidden = false; }
   hide(): void { this.element.hidden = true; }
   setShowFps(visible: boolean): void { this.showFpsInput.checked = visible; }
+  setShowPosition(visible: boolean): void { this.showPositionInput.checked = visible; }
 
   private bindRange(name: string, handler: (value: number) => void): void {
     const input = this.element.querySelector<HTMLInputElement>(`[name="${name}"]`);

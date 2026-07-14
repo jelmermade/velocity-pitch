@@ -6,6 +6,7 @@ import { SettingsMenu } from './menus/SettingsMenu';
 import { PauseMenu } from './menus/PauseMenu';
 
 const FPS_STORAGE_KEY = 'velocity-pitch:show-fps';
+const POSITION_STORAGE_KEY = 'velocity-pitch:show-position';
 
 export class UIManager {
   private readonly hud: HTMLElement;
@@ -18,6 +19,7 @@ export class UIManager {
   private readonly cameraMode: HTMLElement;
   private readonly fpsCounter: HTMLElement;
   private readonly fpsValue: HTMLElement;
+  private readonly positionCounter: HTMLElement;
   private readonly carPosition: HTMLElement;
   private readonly playerScoreboard: HTMLElement;
   private readonly playerScoreboardAzure: HTMLElement;
@@ -25,12 +27,13 @@ export class UIManager {
   private readonly pauseMenu: PauseMenu;
   private readonly settingsMenu: SettingsMenu;
   private fpsVisible = false;
+  private positionVisible = false;
   private smoothedFrameSeconds = 1 / 60;
   private fpsRefreshElapsed = 0;
 
   constructor(
     private readonly root: HTMLElement,
-    settings: Omit<SettingsHandlers, 'onShowFps'>,
+    settings: Omit<SettingsHandlers, 'onShowFps' | 'onShowPosition'>,
     actions: {
       readonly players: readonly LobbyPlayer[];
       readonly localPlayerId: string;
@@ -54,10 +57,10 @@ export class UIManager {
           <section class="announcement" data-announcement></section>
           <div class="countdown" data-countdown></div>
           <aside class="camera-tag">CAM <b data-camera-mode>BALL</b></aside>
-          <aside class="fps-counter" data-fps-counter hidden>
-            <span>FPS <b data-fps-value>60</b></span>
-            <span>POS <b data-car-position>X 0.00 Y 0.00 Z 0.00</b></span>
-          </aside>
+          <div class="debug-readout">
+            <aside class="fps-counter" data-fps-counter hidden>FPS <b data-fps-value>60</b></aside>
+            <aside class="position-counter" data-position-counter hidden>POS <b data-car-position>X 0.00 Y 0.00 Z 0.00</b></aside>
+          </div>
           <section class="player-scoreboard" data-player-scoreboard hidden aria-label="Match score and players">
             <p class="eyebrow">LIVE MATCH // HOLD TAB</p>
             <header class="player-scoreboard__score">
@@ -80,8 +83,7 @@ export class UIManager {
             <span><b>WASD</b> DRIVE / AIR</span><span><b>RMB</b> JUMP + FLIP</span>
             <span><b>LMB</b> BOOST</span><span><b>SHIFT</b> SLIDE</span>
             <span><b>Q E</b> AIR ROLL</span><span><b>SPACE</b> BALL CAM</span>
-            <span><b>TAB</b> SCORE + PLAYERS</span><span><b>F2</b> FPS</span>
-            <span><b>F3</b> FREE CAM</span>
+            <span><b>TAB</b> SCORE + PLAYERS</span>
           </aside>
           <div class="boost-gauge" aria-label="Boost">
             <span class="boost-label">BOOST</span>
@@ -108,6 +110,7 @@ export class UIManager {
               ${this.range('Bloom', 'bloom', 0, 1.2, 0.05, 0)}
               ${this.range('Volume', 'volume', 0, 1, 0.05, 0.55)}
               <label class="setting-toggle"><span>Show FPS <small>F2</small></span><input name="show-fps" type="checkbox"></label>
+              <label class="setting-toggle"><span>Show car position</span><input name="show-position" type="checkbox"></label>
               <button type="button" data-close-settings>BACK</button>
             </div>
           </section>
@@ -123,6 +126,7 @@ export class UIManager {
     this.cameraMode = this.require('[data-camera-mode]');
     this.fpsCounter = this.require('[data-fps-counter]');
     this.fpsValue = this.require('[data-fps-value]');
+    this.positionCounter = this.require('[data-position-counter]');
     this.carPosition = this.require('[data-car-position]');
     this.playerScoreboard = this.require('[data-player-scoreboard]');
     this.playerScoreboardAzure = this.require('[data-player-score-azure]');
@@ -131,8 +135,10 @@ export class UIManager {
     this.settingsMenu = new SettingsMenu(root, {
       ...settings,
       onShowFps: (visible) => this.setFpsVisible(visible),
+      onShowPosition: (visible) => this.setPositionVisible(visible),
     });
     this.setFpsVisible(this.loadFpsPreference());
+    this.setPositionVisible(this.loadPositionPreference());
   }
 
   renderContainer(): HTMLElement { return this.hud; }
@@ -144,14 +150,16 @@ export class UIManager {
   }
 
   updateFrameRate(deltaSeconds: number, position: Vec3): void {
-    if (!this.fpsVisible || deltaSeconds <= 0) return;
-    const blend = 1 - Math.exp(-deltaSeconds * 5);
-    this.smoothedFrameSeconds += (deltaSeconds - this.smoothedFrameSeconds) * blend;
+    if ((!this.fpsVisible && !this.positionVisible) || deltaSeconds <= 0) return;
+    if (this.fpsVisible) {
+      const blend = 1 - Math.exp(-deltaSeconds * 5);
+      this.smoothedFrameSeconds += (deltaSeconds - this.smoothedFrameSeconds) * blend;
+    }
     this.fpsRefreshElapsed += deltaSeconds;
     if (this.fpsRefreshElapsed < 0.25) return;
     this.fpsRefreshElapsed = 0;
-    this.fpsValue.textContent = Math.round(1 / this.smoothedFrameSeconds).toString();
-    this.carPosition.textContent = formatCarPosition(position);
+    if (this.fpsVisible) this.fpsValue.textContent = Math.round(1 / this.smoothedFrameSeconds).toString();
+    if (this.positionVisible) this.carPosition.textContent = formatCarPosition(position);
   }
 
   update(snapshot: SimulationSnapshot, cameraMode: string): void {
@@ -191,9 +199,28 @@ export class UIManager {
     }
   }
 
+  private setPositionVisible(visible: boolean): void {
+    this.positionVisible = visible;
+    this.positionCounter.hidden = !visible;
+    this.settingsMenu.setShowPosition(visible);
+    try {
+      window.localStorage.setItem(POSITION_STORAGE_KEY, visible.toString());
+    } catch {
+      // Storage can be unavailable in privacy-restricted browser contexts.
+    }
+  }
+
   private loadFpsPreference(): boolean {
     try {
       return window.localStorage.getItem(FPS_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  private loadPositionPreference(): boolean {
+    try {
+      return window.localStorage.getItem(POSITION_STORAGE_KEY) === 'true';
     } catch {
       return false;
     }

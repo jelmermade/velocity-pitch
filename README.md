@@ -11,8 +11,8 @@ Velocity Pitch is a browser-based rocket car soccer game built with TypeScript, 
 - Host controls for team assignment, player removal, match reset, match stop, and rematches from the lobby.
 - Host-authoritative multiplayer physics with command buffering, snapshot interpolation, and limited extrapolation.
 - A 60 Hz simulation and adaptive render resolution targeting 60 FPS.
-- Persistent client preferences for camera distance, field of view, bloom, volume, FPS visibility, and driver name.
-- An optional FPS and car-position readout for debugging.
+- Persistent client preferences for camera distance, field of view, bloom, volume, FPS visibility, car-position visibility, and driver name.
+- Independent FPS and car-position readouts for debugging.
 
 ## Requirements
 
@@ -77,7 +77,7 @@ Variables prefixed with `VITE_` are bundled into browser code and must never con
 | `Q` / `E` | Air roll |
 | `Space` | Toggle ball camera |
 | `Tab` | Hold to show the score and player roster |
-| `F2` | Toggle the FPS and car-position readout |
+| `F2` | Toggle the FPS readout |
 | `F3` | Toggle the debug free camera |
 | `Escape` | Open or close the pause menu |
 
