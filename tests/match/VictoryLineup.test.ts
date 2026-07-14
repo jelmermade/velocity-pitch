@@ -39,4 +39,11 @@ describe('victory lineup', () => {
       'azure-2': 'second winner',
     });
   });
+
+  it('centers available cars when the winning team has no rostered player', () => {
+    const soloPlayer = PLAYERS.slice(0, 1);
+    const lineup = createVictoryLineup(soloPlayer, 'coral');
+
+    expect(lineup.get('azure-1')).toEqual(VICTORY_CENTER);
+  });
 });

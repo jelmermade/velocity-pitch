@@ -9,9 +9,11 @@ export const createVictoryLineup = (
   players: readonly LobbyPlayer[],
   winningTeam: TeamId | null,
 ): ReadonlyMap<string, Vec3> => {
-  const winners = winningTeam === null
+  const teamWinners = winningTeam === null
     ? players
     : players.filter(({ team }) => team === winningTeam);
+  // Single-player and unbalanced lobbies can end with no car rostered for the scoring team.
+  const winners = teamWinners.length > 0 ? teamWinners : players;
 
   return new Map(winners.map((player, index) => [player.id, {
     x: VICTORY_CENTER.x + (index - (winners.length - 1) / 2) * VICTORY_CAR_SPACING,

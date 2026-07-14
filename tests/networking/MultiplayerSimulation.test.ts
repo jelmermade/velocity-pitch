@@ -112,4 +112,24 @@ describe('authoritative multiplayer simulation', () => {
     expect(winner?.linearVelocity.x).toBe(0);
     expect(winner?.linearVelocity.z).toBe(0);
   });
+
+  it('keeps the solo car at midfield when the other team wins', async () => {
+    world = await RapierPhysicsWorld.create();
+    const soloPlayers = PLAYERS.slice(0, 1);
+    const simulation = new GameSimulation(world, new EventBus<GameEventMap>(), soloPlayers, 'host');
+    const match = Reflect.get(simulation, 'match') as MatchController;
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+    match.update(3);
+    match.goal('coral', { x: 0, y: 3.75, z: -51 });
+    simulation.stopMatch();
+
+    simulation.updatePlayers(new Map([
+      ['host', NEUTRAL_COMMAND],
+    ]), step);
+
+    const car = simulation.authoritativeFrame(1).cars.host;
+    expect(car?.transform.position.x).toBe(VICTORY_CENTER.x);
+    expect(car?.transform.position.z).toBe(VICTORY_CENTER.z);
+    expect(car?.transform.position.y).toBeCloseTo(VICTORY_CENTER.y, 2);
+  });
 });
