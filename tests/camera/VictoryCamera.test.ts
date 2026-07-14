@@ -25,6 +25,10 @@ describe('victory camera', () => {
     expect(camera.position.x).toBe(0);
     expect(camera.position.y).toBeCloseTo(8.5);
     expect(camera.position.z).toBeCloseTo(14);
+    camera.updateMatrixWorld();
+    const lineupCenter = new THREE.Vector3(0, 0.72, 0).project(camera);
+    expect(lineupCenter.x).toBeCloseTo(0, 5);
+    expect(lineupCenter.y).toBeCloseTo(0, 5);
     controller.dispose();
   });
 });
