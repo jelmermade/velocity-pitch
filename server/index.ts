@@ -15,7 +15,11 @@ import { sanitizeMatchSettings, type MatchSettings } from '../src/gameplay/match
 import { fillBotSlots } from '../src/gameplay/bots/BotRoster';
 import { BotKnowledgeFileStore } from './BotKnowledgeFileStore';
 
-const port = Number(process.env.MULTIPLAYER_PORT ?? 8787);
+const port = Number(
+  process.env.PORT ??
+  process.env.MULTIPLAYER_PORT ??
+  8787
+);
 const host = process.env.MULTIPLAYER_HOST ?? '0.0.0.0';
 interface ClientConnection {
   readonly socket: WebSocket;
