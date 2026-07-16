@@ -1,2 +1,2 @@
-require('tsx')
-require('./index.ts')
+require('tsx/cjs');
+require('./index.ts');
