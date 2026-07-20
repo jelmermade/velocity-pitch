@@ -52,7 +52,11 @@ export class ArenaView {
     surfaces.forEach((surface, index) => {
       transform.position.set(surface.position.x, surface.position.y, surface.position.z);
       transform.quaternion.set(surface.rotation.x, surface.rotation.y, surface.rotation.z, surface.rotation.w);
-      transform.scale.set(surface.halfExtents.x * 2, surface.halfExtents.y * 2, surface.halfExtents.z * 2);
+      transform.scale.set(
+        surface.halfExtents.x * 2,
+        surface.halfExtents.y * 2,
+        surface.halfExtents.z * 2,
+      );
       transform.updateMatrix();
       mesh.setMatrixAt(index, transform.matrix);
     });
@@ -65,39 +69,67 @@ export class ArenaView {
     for (const goal of GOALS) {
       const zSign = goal.center.z > 0 ? 1 : -1;
       const team = goal.defendingTeam;
-      const color = team === 'azure' ? 0x2cd9ff : 0xff5b51;
+      const color = team === 'azure' ? 0x7299a3 : 0xb08a70;
       const frameMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1b292d,
+        emissive: 0x0c1719,
+        emissiveIntensity: 0.35,
+        metalness: 0.72,
+        roughness: 0.26,
+      });
+      const accentMaterial = new THREE.MeshStandardMaterial({
         color,
         emissive: color,
-        emissiveIntensity: 2.6,
-        metalness: 0.65,
-        roughness: 0.22,
+        emissiveIntensity: 0.42,
+        metalness: 0.58,
+        roughness: 0.24,
       });
       const glowMaterial = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
-        opacity: 0.16,
+        opacity: 0.1,
         depthWrite: false,
         side: THREE.DoubleSide,
       });
       const goalLine = ARENA_TUNING.halfLength + ARENA_TUNING.goalTransitionDepth;
       const mouthZ = zSign * (goalLine + 0.12);
       const centerZ = zSign * (goalLine + ARENA_TUNING.goalDepth / 2);
-      const frameThickness = 0.34;
+      const frameThickness = 0.44;
+      const accentThickness = 0.075;
 
       const postGeometry = new THREE.BoxGeometry(frameThickness, ARENA_TUNING.goalHeight, frameThickness);
       for (const xSign of [-1, 1] as const) {
         const post = new THREE.Mesh(postGeometry, frameMaterial);
         post.position.set(xSign * ARENA_TUNING.goalHalfWidth, ARENA_TUNING.goalHeight / 2, mouthZ);
         post.name = `goal-${team}-post`;
-        this.group.add(post);
+        const postAccent = new THREE.Mesh(
+          new THREE.BoxGeometry(accentThickness, ARENA_TUNING.goalHeight - frameThickness, frameThickness * 1.04),
+          accentMaterial,
+        );
+        postAccent.position.set(
+          xSign * (ARENA_TUNING.goalHalfWidth - frameThickness * 0.54),
+          (ARENA_TUNING.goalHeight - frameThickness) / 2,
+          mouthZ - zSign * 0.015,
+        );
+        this.group.add(post, postAccent);
 
+        const railGeometry = new THREE.BoxGeometry(
+          frameThickness * 0.62,
+          frameThickness * 0.62,
+          ARENA_TUNING.goalDepth,
+        );
         const depthRail = new THREE.Mesh(
-          new THREE.BoxGeometry(frameThickness * 0.62, frameThickness * 0.62, ARENA_TUNING.goalDepth),
+          railGeometry,
           frameMaterial,
         );
         depthRail.position.set(xSign * ARENA_TUNING.goalHalfWidth, 0.2, centerZ);
-        this.group.add(depthRail);
+        const upperDepthRail = new THREE.Mesh(railGeometry, frameMaterial);
+        upperDepthRail.position.set(
+          xSign * ARENA_TUNING.goalHalfWidth,
+          ARENA_TUNING.goalHeight - frameThickness * 0.31,
+          centerZ,
+        );
+        this.group.add(depthRail, upperDepthRail);
       }
 
       const crossbar = new THREE.Mesh(
@@ -106,7 +138,20 @@ export class ArenaView {
       );
       crossbar.position.set(0, ARENA_TUNING.goalHeight, mouthZ);
       crossbar.name = `goal-${team}-crossbar`;
-      this.group.add(crossbar);
+      const crossbarAccent = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          ARENA_TUNING.goalHalfWidth * 2 - frameThickness,
+          accentThickness,
+          frameThickness * 1.04,
+        ),
+        accentMaterial,
+      );
+      crossbarAccent.position.set(
+        0,
+        ARENA_TUNING.goalHeight - frameThickness * 0.54,
+        mouthZ - zSign * 0.015,
+      );
+      this.group.add(crossbar, crossbarAccent);
 
       const canopyRails = new THREE.Mesh(
         new THREE.BoxGeometry(ARENA_TUNING.goalHalfWidth * 2, frameThickness * 0.5, ARENA_TUNING.goalDepth),

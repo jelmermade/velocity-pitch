@@ -4,6 +4,7 @@ import {
   DEFAULT_MATCH_SETTINGS,
   sanitizeMatchSettings,
 } from '../../src/gameplay/match/MatchSettings';
+import { DEFAULT_CAR_TUNING } from '../../src/core/config/CarTuning';
 
 describe('match settings', () => {
   it('sanitizes host-provided values to supported slider ranges', () => {
@@ -33,6 +34,6 @@ describe('match settings', () => {
     });
 
     expect(tuning.boostRecharge).toBe(18);
-    expect(tuning.boostForce).toBe(60_000);
+    expect(tuning.boostForce).toBe(DEFAULT_CAR_TUNING.boostForce * 2.5);
   });
 });

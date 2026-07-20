@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { RUNTIME_CONFIG } from '../../src/app/RuntimeConfig';
 import { BALL_TUNING } from '../../src/core/config/BallTuning';
 import { ARENA_TUNING } from '../../src/core/config/ArenaTuning';
 import { DEFAULT_CAR_TUNING } from '../../src/core/config/CarTuning';
@@ -13,6 +14,48 @@ describe('Car collision profile', () => {
   let world: PhysicsWorld | undefined;
 
   afterEach(() => world?.dispose());
+
+  it('keeps the chassis collider above the wheel contact plane', () => {
+    const points = DEFAULT_CAR_TUNING.colliderPoints;
+    const minimumY = Math.min(...points.map(({ y }) => y));
+    const chassisBottom = minimumY - DEFAULT_CAR_TUNING.colliderBorderRadius;
+    const wheelBottom = -0.2 - DEFAULT_CAR_TUNING.wheelRadius;
+
+    expect(chassisBottom - wheelBottom).toBeGreaterThan(0.25);
+  });
+
+  it('leaves the ground immediately and reaches normal jump height', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz * 1.5; tick += 1) {
+      car.update(world, NEUTRAL_COMMAND, step);
+      world.step(step);
+    }
+    const groundedPosition = car.state().transform.position;
+    expect(car.state().grounded).toBe(true);
+
+    car.update(world, { ...NEUTRAL_COMMAND, jumpPressed: true, jumpHeld: true }, step);
+    world.step(step);
+    const launchVelocity = car.state().linearVelocity.y;
+    let firstAirborneTick: number | null = null;
+    let peakHeight = car.state().transform.position.y;
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz; tick += 1) {
+      car.update(world, { ...NEUTRAL_COMMAND, jumpHeld: tick < 10 }, step);
+      world.step(step);
+      const state = car.state();
+      if (!state.grounded && firstAirborneTick === null) firstAirborneTick = tick;
+      peakHeight = Math.max(peakHeight, state.transform.position.y);
+    }
+
+    const metrics = { launchVelocity, firstAirborneTick, peakHeight };
+    expect(launchVelocity, JSON.stringify(metrics)).toBeGreaterThan(5);
+    expect(firstAirborneTick, JSON.stringify(metrics)).not.toBeNull();
+    expect(firstAirborneTick ?? 99, JSON.stringify(metrics)).toBeLessThan(6);
+    expect(peakHeight, JSON.stringify(metrics)).toBeGreaterThan(2.5);
+    expect(peakHeight - groundedPosition.y, JSON.stringify(metrics)).toBeGreaterThan(1.8);
+  });
 
   it('launches a fast grounded ball upward from the rounded front edge', async () => {
     world = await RapierPhysicsWorld.create();
@@ -124,17 +167,17 @@ describe('Car collision profile', () => {
     const visibleGroundClearance = state.transform.position.y - DEFAULT_CAR_TUNING.halfExtents.y;
     const physicalGroundClearance = visibleGroundClearance - DEFAULT_CAR_TUNING.colliderBorderRadius;
 
-    expect(visibleGroundClearance).toBeGreaterThan(0.12);
-    expect(visibleGroundClearance).toBeLessThan(0.25);
-    expect(physicalGroundClearance).toBeGreaterThan(0.02);
-    expect(physicalGroundClearance).toBeLessThan(0.12);
+    expect(visibleGroundClearance).toBeGreaterThan(0.1);
+    expect(visibleGroundClearance).toBeLessThan(0.14);
+    expect(physicalGroundClearance).toBeGreaterThan(-0.02);
+    expect(physicalGroundClearance).toBeLessThan(0.02);
     state.wheels.forEach((wheel) => {
       const lateralOffset = Math.abs(wheel.position.x - state.transform.position.x);
       expect(wheel.position.y).toBeCloseTo(DEFAULT_CAR_TUNING.wheelRadius, 2);
       expect(wheel.contactPoint.y).toBeCloseTo(0, 2);
       expect(lateralOffset).toBeGreaterThan(DEFAULT_CAR_TUNING.halfExtents.x - 0.12);
       expect(lateralOffset).toBeLessThan(DEFAULT_CAR_TUNING.halfExtents.x + 0.12);
-      expect(wheel.suspensionLength).toBeLessThan(DEFAULT_CAR_TUNING.suspensionRestLength);
+      expect(wheel.suspensionLength).toBe(0);
       expect(wheel.position.y + DEFAULT_CAR_TUNING.wheelRadius).toBeGreaterThan(state.transform.position.y);
     });
   });

@@ -15,13 +15,13 @@ describe('gameplay vehicle configuration', () => {
     expect(DEFAULT_CAR_TUNING.maximumGroundReverseSpeed).toBe(VEHICLE_CONFIG.reverseTopSpeed);
     expect(DEFAULT_CAR_TUNING.engineForce).toBe(9_500 * VEHICLE_CONFIG.accelerationMultiplier);
     expect(DEFAULT_CAR_TUNING.reverseForce).toBe(6_500 * VEHICLE_CONFIG.reverseAccelerationMultiplier);
-    expect(DEFAULT_CAR_TUNING.brakeForce).toBe(18_000 * VEHICLE_CONFIG.brakeMultiplier);
+    expect(DEFAULT_CAR_TUNING.brakeForce).toBe(24_000 * VEHICLE_CONFIG.brakeMultiplier);
     expect(DEFAULT_CAR_TUNING.maximumSteerAngle).toBe(0.265 * VEHICLE_CONFIG.steeringMultiplier);
     expect(DEFAULT_CAR_TUNING.maximumGroundBoostSpeed).toBe(VEHICLE_CONFIG.boostTopSpeed);
     expect(DEFAULT_CAR_TUNING.boostForce).toBe(24_000 * VEHICLE_CONFIG.boostAccelerationMultiplier);
     expect(DEFAULT_CAR_TUNING.boostConsumption).toBe(VEHICLE_CONFIG.boostConsumptionPerSecond);
     expect(DEFAULT_CAR_TUNING.boostRecharge).toBe(VEHICLE_CONFIG.boostRechargePerSecond);
-    expect(DEFAULT_CAR_TUNING.jumpImpulse).toBe(5_700 * VEHICLE_CONFIG.jumpPowerMultiplier);
+    expect(DEFAULT_CAR_TUNING.jumpImpulse).toBe(10_000 * VEHICLE_CONFIG.jumpPowerMultiplier);
     expect(DEFAULT_CAR_TUNING.dodgeImpulse).toBe(4_500 * VEHICLE_CONFIG.dodgePowerMultiplier);
     expect(DEFAULT_CAR_TUNING.aerialTorque).toBe(12_000 * VEHICLE_CONFIG.aerialControlMultiplier);
   });
@@ -39,7 +39,7 @@ describe('gameplay vehicle configuration', () => {
     expect(tuning.maximumGroundDriveSpeed).toBe(31);
     expect(tuning.engineForce).toBe(9_500 * 1.75);
     expect(tuning.maximumGroundBoostSpeed).toBe(42);
-    expect(tuning.jumpImpulse).toBe(5_700 * 1.4);
+    expect(tuning.jumpImpulse).toBe(10_000 * 1.4);
     expect(DEFAULT_CAR_TUNING.maximumGroundDriveSpeed).toBe(VEHICLE_CONFIG.driveTopSpeed);
   });
 
@@ -64,7 +64,7 @@ describe('gameplay vehicle configuration', () => {
     expect(readRuntimeGameplayConfig()).toBeNull();
   });
 
-  it('loads temporary arena and ball sizes when the game starts again', async () => {
+  it('loads temporary tuning only for an explicit Bot Lab rebuild', async () => {
     const storage = new Map<string, string>();
     storage.set('velocity-pitch:bot-lab-gameplay-config', JSON.stringify({
       arenaScale: 2.4,
@@ -72,6 +72,7 @@ describe('gameplay vehicle configuration', () => {
       vehicle: VEHICLE_CONFIG,
     }));
     vi.stubGlobal('window', {
+      location: { search: '?botLabTuning=1' },
       sessionStorage: {
         getItem: (key: string) => storage.get(key) ?? null,
         setItem: (key: string, value: string) => storage.set(key, value),
@@ -83,5 +84,28 @@ describe('gameplay vehicle configuration', () => {
     const reloaded = await import('../../src/core/config/GameplayScale');
 
     expect(reloaded.GAMEPLAY_SCALE).toEqual({ arenaScale: 2.4, ballSize: 1.8 });
+  });
+
+  it('ignores stale Bot Lab tuning when a normal game starts', async () => {
+    const storage = new Map<string, string>();
+    storage.set('velocity-pitch:bot-lab-gameplay-config', JSON.stringify({
+      arenaScale: 2.4,
+      ballSize: 1.8,
+      vehicle: { ...VEHICLE_CONFIG, jumpPowerMultiplier: 0.25 },
+    }));
+    vi.stubGlobal('window', {
+      location: { search: '' },
+      sessionStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    vi.resetModules();
+
+    const reloaded = await import('../../src/core/config/GameplayScale');
+
+    expect(reloaded.VEHICLE_CONFIG.jumpPowerMultiplier).toBe(1.1);
+    expect(reloaded.GAMEPLAY_SCALE).toEqual({ arenaScale: 1.5, ballSize: 1.25 });
   });
 });

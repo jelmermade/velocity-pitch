@@ -4,7 +4,7 @@ import type { LobbyPlayer, TeamId } from '../../networking/LobbyProtocol';
 
 const VICTORY_CAR_SPACING = 3.4;
 
-export const VICTORY_CENTER: Readonly<Vec3> = Object.freeze({ x: 0, y: 0.72, z: 0 });
+export const VICTORY_CENTER: Readonly<Vec3> = Object.freeze({ x: 0, y: 0.62, z: 0 });
 export const VICTORY_ROTATION: Readonly<Quat> = Object.freeze({ x: 0, y: 1, z: 0, w: 0 });
 
 export const createVictoryLineup = (

@@ -6,6 +6,7 @@ import { rotateVector } from '../../src/core/math/Quaternion';
 import type { MatchController } from '../../src/gameplay/match/MatchController';
 import { VICTORY_CENTER } from '../../src/gameplay/match/VictoryLineup';
 import { GameSimulation } from '../../src/gameplay/simulation/GameSimulation';
+import { InputManager } from '../../src/input/InputManager';
 import { NEUTRAL_COMMAND } from '../../src/input/PlayerCommand';
 import type { LobbyPlayer } from '../../src/networking/LobbyProtocol';
 import type { PhysicsWorld } from '../../src/physics/PhysicsWorld';
@@ -43,6 +44,43 @@ describe('authoritative multiplayer simulation', () => {
     expect(before).toBeDefined();
     expect(guest).toBeDefined();
     expect((guest?.transform.position.z ?? -23) - (before?.transform.position.z ?? -23)).toBeGreaterThan(4);
+  });
+
+  it('jumps from the live right-mouse input at the runtime physics rate', async () => {
+    world = await RapierPhysicsWorld.create();
+    const simulation = new GameSimulation(world, new EventBus<GameEventMap>(), PLAYERS, 'host');
+    const target = new EventTarget();
+    const input = new InputManager(target as unknown as Window);
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+
+    for (let tick = 0; tick < Math.ceil(RUNTIME_CONFIG.physicsHz * 3.1); tick += 1) {
+      simulation.update(input.sample(), step);
+    }
+    const groundedState = simulation.authoritativeFrame(0).cars.host;
+    expect(groundedState?.grounded).toBe(true);
+
+    target.dispatchEvent(mouseEvent('mousedown', 2));
+    const pressed = input.sample();
+    simulation.update(pressed, step);
+    const launchState = simulation.authoritativeFrame(0).cars.host;
+    let peakHeight = launchState?.transform.position.y ?? 0;
+    let airborneTicks = 0;
+
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz; tick += 1) {
+      const command = input.sample();
+      simulation.update(command, step);
+      const car = simulation.authoritativeFrame(tick + 1).cars.host;
+      peakHeight = Math.max(peakHeight, car?.transform.position.y ?? 0);
+      if (car?.grounded === false) airborneTicks += 1;
+      if (tick === 9) target.dispatchEvent(mouseEvent('mouseup', 2));
+    }
+
+    input.dispose();
+    expect(pressed).toMatchObject({ jumpPressed: true, jumpHeld: true });
+    expect(launchState?.linearVelocity.y ?? 0).toBeGreaterThan(5);
+    expect(airborneTicks).toBeGreaterThan(20);
+    expect(peakHeight).toBeGreaterThan(2.5);
+    expect(peakHeight - (groundedState?.transform.position.y ?? peakHeight)).toBeGreaterThan(1.8);
   });
 
   it('anchors victory cars at midfield while allowing jump, boost, and yaw', async () => {
@@ -138,3 +176,9 @@ describe('authoritative multiplayer simulation', () => {
     expect(car?.transform.position.y).toBeCloseTo(VICTORY_CENTER.y, 2);
   });
 });
+
+const mouseEvent = (type: string, button: number): Event => {
+  const event = new Event(type, { cancelable: true });
+  Object.defineProperty(event, 'button', { value: button });
+  return event;
+};

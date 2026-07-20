@@ -3,7 +3,7 @@ import type { PhysicsBody } from './PhysicsBody';
 import type { BodyOptions, ColliderOptions, RayHit } from './PhysicsTypes';
 
 export interface PhysicsWorld {
-  createDynamicBody(body: BodyOptions, collider: ColliderOptions): PhysicsBody;
+  createDynamicBody(body: BodyOptions, colliders: ColliderOptions | readonly ColliderOptions[]): PhysicsBody;
   createFixedCollider(body: BodyOptions, collider: ColliderOptions): void;
   castRay(
     origin: Vec3,

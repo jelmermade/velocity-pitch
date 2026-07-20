@@ -14,7 +14,10 @@ export class RapierPhysicsWorld implements PhysicsWorld {
     return new RapierPhysicsWorld(new RAPIER.World(PHYSICS_TUNING.gravity));
   }
 
-  createDynamicBody(options: BodyOptions, colliderOptions: ColliderOptions): PhysicsBody {
+  createDynamicBody(
+    options: BodyOptions,
+    colliderOptions: ColliderOptions | readonly ColliderOptions[],
+  ): PhysicsBody {
     let descriptor = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(options.position.x, options.position.y, options.position.z)
       .setLinearDamping(options.linearDamping ?? 0)
@@ -22,7 +25,10 @@ export class RapierPhysicsWorld implements PhysicsWorld {
       .setCcdEnabled(options.ccd ?? false);
     if (options.rotation) descriptor = descriptor.setRotation(options.rotation);
     const body = this.world.createRigidBody(descriptor);
-    this.world.createCollider(this.createColliderDescriptor(colliderOptions), body);
+    const colliders = 'shape' in colliderOptions ? [colliderOptions] : colliderOptions;
+    colliders.forEach((optionsForCollider) => {
+      this.world.createCollider(this.createColliderDescriptor(optionsForCollider), body);
+    });
     return new RapierBody(body);
   }
 
@@ -76,10 +82,12 @@ export class RapierPhysicsWorld implements PhysicsWorld {
   contactingBodyHandles(body: PhysicsBody): readonly number[] {
     if (!(body instanceof RapierBody) || body.raw.numColliders() === 0) return [];
     const handles = new Set<number>();
-    this.world.contactPairsWith(body.raw.collider(0), (other) => {
-      const handle = other.parent()?.handle;
-      if (handle !== undefined) handles.add(handle);
-    });
+    for (let index = 0; index < body.raw.numColliders(); index += 1) {
+      this.world.contactPairsWith(body.raw.collider(index), (other) => {
+        const handle = other.parent()?.handle;
+        if (handle !== undefined) handles.add(handle);
+      });
+    }
     return [...handles];
   }
 
@@ -117,10 +125,17 @@ export class RapierPhysicsWorld implements PhysicsWorld {
         descriptor = RAPIER.ColliderDesc.ball(options.shape.radius);
         break;
     }
+    if (options.localPosition) {
+      descriptor.setTranslation(
+        options.localPosition.x,
+        options.localPosition.y,
+        options.localPosition.z,
+      );
+    }
     if (options.mass !== undefined) descriptor.setMass(options.mass);
     descriptor.setFriction(options.friction ?? 0.7);
     descriptor.setRestitution(options.restitution ?? 0.1);
-    descriptor.setFrictionCombineRule(RAPIER.CoefficientCombineRule.Average);
+    descriptor.setFrictionCombineRule(toRapierCombineRule(options.frictionCombineRule ?? 'average'));
     descriptor.setRestitutionCombineRule(toRapierCombineRule(options.restitutionCombineRule ?? 'average'));
     descriptor.setSensor(options.sensor ?? false);
     return descriptor;

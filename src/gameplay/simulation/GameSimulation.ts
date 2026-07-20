@@ -241,7 +241,7 @@ export class GameSimulation {
       this.cars.get(player.id)?.teleport({
         position: {
           x: ARENA_TUNING.halfWidth - 3,
-          y: 0.72,
+          y: 0.62,
           z: (index - 1) * 3.4,
         },
         rotation: { x: 0, y: 0, z: 0, w: 1 },

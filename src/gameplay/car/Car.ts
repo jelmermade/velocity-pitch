@@ -33,23 +33,45 @@ export class Car {
     this.controller = new CarController(tuning);
     this.initialWheels = WHEEL_CONNECTIONS.map(({ x, y, z }) => ({
       connectionPoint: { x, y: spawn.position.y + y, z: spawn.position.z + z },
-      contactPoint: { x, y: 0, z: spawn.position.z + z },
-      position: { x, y: tuning.wheelRadius, z: spawn.position.z + z },
+      contactPoint: {
+        x,
+        y: spawn.position.y + y - tuning.wheelRadius,
+        z: spawn.position.z + z,
+      },
+      position: { x, y: spawn.position.y + y, z: spawn.position.z + z },
       grounded: true,
-      suspensionLength: spawn.position.y - 0.2 - tuning.wheelRadius,
+      suspensionLength: 0,
       steeringAngle: 0,
       spinAngle: 0,
     }));
     this.controlState = { wheels: this.initialWheels, grounded: true, boost: 100, boosting: false };
     this.body = world.createDynamicBody(
       { position: spawn.position, rotation: spawn.rotation, linearDamping: 0.08, angularDamping: 0.5, ccd: true },
-      {
-        shape: { type: 'roundConvexHull', points: tuning.colliderPoints, borderRadius: tuning.colliderBorderRadius },
-        mass: tuning.mass,
-        friction: 0.5,
-        restitution: 0,
-        restitutionCombineRule: 'min',
-      },
+      [
+        {
+          shape: { type: 'roundConvexHull', points: tuning.colliderPoints, borderRadius: tuning.colliderBorderRadius },
+          mass: tuning.mass,
+          // Tire forces are modeled by WheelContactSystem; colliders only provide smooth support.
+          friction: 0,
+          frictionCombineRule: 'min',
+          restitution: 0,
+          restitutionCombineRule: 'min',
+        },
+        ...[
+          { x: -0.16, y: -0.2, z: -0.24 },
+          { x: 0.16, y: -0.2, z: -0.24 },
+          { x: -0.16, y: -0.2, z: 0.24 },
+          { x: 0.16, y: -0.2, z: 0.24 },
+        ].map((localPosition) => ({
+          shape: { type: 'ball' as const, radius: tuning.wheelRadius },
+          localPosition,
+          mass: 0,
+          friction: 0,
+          frictionCombineRule: 'min' as const,
+          restitution: 0,
+          restitutionCombineRule: 'min' as const,
+        })),
+      ],
     );
   }
 

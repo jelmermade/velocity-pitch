@@ -58,7 +58,9 @@ export const sanitizeGameplayConfig = (value: Partial<GameplayConfig>): Gameplay
   vehicle: sanitizeVehicleConfig(value.vehicle ?? {}),
 });
 
-const runtimeConfig = readRuntimeGameplayConfig();
+const runtimeConfig = runtimeGameplayConfigRequested()
+  ? readRuntimeGameplayConfig()
+  : null;
 
 export const GAMEPLAY_SCALE = Object.freeze({
   arenaScale: positiveScale(runtimeConfig?.arenaScale ?? gameplayConfig.arenaScale),
@@ -77,6 +79,15 @@ export function readRuntimeGameplayConfig(): GameplayConfig | null {
     return sanitizeGameplayConfig(JSON.parse(stored) as Partial<GameplayConfig>);
   } catch {
     return null;
+  }
+}
+
+export function runtimeGameplayConfigRequested(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('botLabTuning') === '1';
+  } catch {
+    return false;
   }
 }
 

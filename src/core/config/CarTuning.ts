@@ -5,16 +5,17 @@ export interface CarTuning {
   readonly halfExtents: { readonly x: number; readonly y: number; readonly z: number };
   readonly colliderBorderRadius: number;
   readonly colliderPoints: readonly { readonly x: number; readonly y: number; readonly z: number }[];
-  readonly suspensionRestLength: number;
   readonly wheelRadius: number;
-  readonly springStrength: number;
-  readonly damperStrength: number;
-  readonly maximumSuspensionForce: number;
+  readonly wheelContactTolerance: number;
   readonly surfaceAdhesionForce: number;
+  readonly surfaceAdhesionSpeedForce: number;
   readonly surfaceMinimumAdhesionFactor: number;
   readonly surfaceGravityCompensation: number;
   readonly surfaceAlignmentTorque: number;
+  readonly surfaceHeadingTorque: number;
+  readonly surfaceHeadingDamping: number;
   readonly surfaceAdhesionGraceSeconds: number;
+  readonly surfaceContactProbeExtension: number;
   readonly engineForce: number;
   readonly reverseForce: number;
   readonly maximumGroundDriveSpeed: number;
@@ -32,7 +33,13 @@ export interface CarTuning {
   readonly maximumPowerslideForce: number;
   readonly maximumSteerAngle: number;
   readonly powerslideSteerMultiplier: number;
+  readonly groundTurnRadius: number;
   readonly groundSteeringTorque: number;
+  readonly groundSteeringResponse: number;
+  readonly surfaceSteeringAssist: number;
+  readonly groundTractionAlignmentTorque: number;
+  readonly maximumGroundTractionAlignmentTorque: number;
+  readonly groundYawDamping: number;
   readonly powerslideSteeringTorque: number;
   readonly boostForce: number;
   readonly maximumGroundBoostSpeed: number;
@@ -67,29 +74,33 @@ export const carTuningForVehicleConfig = (vehicle: VehicleConfig): CarTuning => 
   halfExtents: { x: 0.92, y: 0.42, z: 1.38 },
   colliderBorderRadius: 0.12,
   colliderPoints: [
-    { x: -0.92, y: -0.42, z: -1.38 }, { x: 0.92, y: -0.42, z: -1.38 },
-    { x: -0.92, y: -0.42, z: 1.38 }, { x: 0.92, y: -0.42, z: 1.38 },
-    { x: -0.92, y: 0.04, z: -1.38 }, { x: 0.92, y: 0.04, z: -1.38 },
+    // The physical wheels support the car; the chassis stays clear of curved surfaces.
+    { x: -0.58, y: -0.14, z: -1.02 }, { x: 0.58, y: -0.14, z: -1.02 },
+    { x: -0.58, y: -0.14, z: 1.02 }, { x: 0.58, y: -0.14, z: 1.02 },
+    { x: -0.92, y: -0.1, z: -1.2 }, { x: 0.92, y: -0.1, z: -1.2 },
+    { x: -0.92, y: -0.1, z: 1.2 }, { x: 0.92, y: -0.1, z: 1.2 },
+    { x: -0.82, y: 0.04, z: -1.38 }, { x: 0.82, y: 0.04, z: -1.38 },
     { x: -0.92, y: 0.34, z: -0.48 }, { x: 0.92, y: 0.34, z: -0.48 },
     { x: -0.92, y: 0.42, z: 0.48 }, { x: 0.92, y: 0.42, z: 0.48 },
     { x: -0.92, y: 0.34, z: 1.38 }, { x: 0.92, y: 0.34, z: 1.38 },
   ],
-  suspensionRestLength: 0.22,
   wheelRadius: 0.34,
-  springStrength: 28_000,
-  damperStrength: 3_200,
-  maximumSuspensionForce: 64_000,
+  wheelContactTolerance: 0.12,
   surfaceAdhesionForce: 12_000,
+  surfaceAdhesionSpeedForce: 260,
   surfaceMinimumAdhesionFactor: 0.65,
   surfaceGravityCompensation: 0.72,
-  surfaceAlignmentTorque: 16_000,
+  surfaceAlignmentTorque: 200_000,
+  surfaceHeadingTorque: 75_000,
+  surfaceHeadingDamping: 20_000,
   surfaceAdhesionGraceSeconds: 0.3,
+  surfaceContactProbeExtension: 0.9,
   engineForce: 9_500 * vehicle.accelerationMultiplier,
   reverseForce: 6_500 * vehicle.reverseAccelerationMultiplier,
   maximumGroundDriveSpeed: vehicle.driveTopSpeed,
   maximumGroundReverseSpeed: vehicle.reverseTopSpeed,
   groundDriveSpeedFalloffRange: 4,
-  brakeForce: 18_000 * vehicle.brakeMultiplier,
+  brakeForce: 24_000 * vehicle.brakeMultiplier,
   brakeToReverseSpeed: 0.8,
   coastDrag: 1_200,
   idleBrakeDrag: 10_000,
@@ -101,7 +112,13 @@ export const carTuningForVehicleConfig = (vehicle: VehicleConfig): CarTuning => 
   maximumPowerslideForce: 5_500,
   maximumSteerAngle: 0.265 * vehicle.steeringMultiplier,
   powerslideSteerMultiplier: 1.95,
-  groundSteeringTorque: 550 * vehicle.steeringMultiplier,
+  groundTurnRadius: 28 / vehicle.steeringMultiplier,
+  groundSteeringTorque: 5_000 * vehicle.steeringMultiplier,
+  groundSteeringResponse: 8_000,
+  surfaceSteeringAssist: 1,
+  groundTractionAlignmentTorque: 12_000,
+  maximumGroundTractionAlignmentTorque: 4_000,
+  groundYawDamping: 8_000,
   powerslideSteeringTorque: 2_300 * vehicle.steeringMultiplier,
   boostForce: 24_000 * vehicle.boostAccelerationMultiplier,
   maximumGroundBoostSpeed: vehicle.boostTopSpeed,
@@ -111,7 +128,7 @@ export const carTuningForVehicleConfig = (vehicle: VehicleConfig): CarTuning => 
   ceilingRecoverySeconds: 0.65,
   ceilingBounceFactor: 0.3,
   minimumCeilingFallSpeed: 2,
-  jumpImpulse: 5_700 * vehicle.jumpPowerMultiplier,
+  jumpImpulse: 10_000 * vehicle.jumpPowerMultiplier,
   dodgeImpulse: 4_500 * vehicle.dodgePowerMultiplier,
   dodgePitchTorque: 5_200 * vehicle.dodgePowerMultiplier,
   dodgeRollTorque: 3_400 * vehicle.dodgePowerMultiplier,

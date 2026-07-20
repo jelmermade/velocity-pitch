@@ -18,8 +18,8 @@ describe('victory lineup', () => {
     const lineup = createVictoryLineup(PLAYERS, 'azure');
 
     expect([...lineup.keys()]).toEqual(['azure-1', 'azure-2']);
-    expect(lineup.get('azure-1')).toEqual({ x: -1.7, y: 0.72, z: 0 });
-    expect(lineup.get('azure-2')).toEqual({ x: 1.7, y: 0.72, z: 0 });
+    expect(lineup.get('azure-1')).toEqual({ x: -1.7, y: 0.62, z: 0 });
+    expect(lineup.get('azure-2')).toEqual({ x: 1.7, y: 0.62, z: 0 });
     expect(lineup.has('coral-1')).toBe(false);
     expect(lineup.has('coral-2')).toBe(false);
     expect((lineup.get('azure-1')?.x ?? 0) + (lineup.get('azure-2')?.x ?? 0)).toBe(VICTORY_CENTER.x);

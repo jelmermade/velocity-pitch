@@ -3,6 +3,7 @@ import { createArena } from '../../src/gameplay/arena/Arena';
 import { ARENA_TUNING } from '../../src/core/config/ArenaTuning';
 import { rotateVector } from '../../src/core/math/Quaternion';
 import { DEFAULT_CAR_TUNING } from '../../src/core/config/CarTuning';
+import { VEHICLE_CONFIG } from '../../src/core/config/GameplayScale';
 import { Car } from '../../src/gameplay/car/Car';
 import type { CarState } from '../../src/gameplay/car/CarState';
 import { NEUTRAL_COMMAND, type PlayerCommand } from '../../src/input/PlayerCommand';
@@ -17,7 +18,7 @@ describe('Car stability', () => {
     world = undefined;
   });
 
-  it('settles on its suspension and accelerates without becoming unstable', async () => {
+  it('rests on rigid wheel mounts and accelerates without becoming unstable', async () => {
     world = await RapierPhysicsWorld.create();
     createArena(world);
     const car = new Car(world);
@@ -30,19 +31,32 @@ describe('Car stability', () => {
       velocity: resting.linearVelocity,
       rotation: resting.transform.rotation,
       angularVelocity: resting.angularVelocity,
-      suspensionLengths: resting.wheels.map(({ suspensionLength }) => suspensionLength),
+      wheelMountOffsets: resting.wheels.map(({ suspensionLength }) => suspensionLength),
     };
     expect(resting.grounded).toBe(true);
-    expect(resting.transform.position.y).toBeGreaterThan(0.55);
-    expect(resting.transform.position.y).toBeLessThan(0.75);
+    expect(resting.transform.position.y).toBeGreaterThan(0.52);
+    expect(resting.transform.position.y).toBeLessThan(0.56);
     expect(Math.abs(resting.linearVelocity.y)).toBeLessThan(0.5);
     expect(Math.hypot(resting.linearVelocity.x, resting.linearVelocity.z), JSON.stringify(neutralMetrics)).toBeLessThan(0.02);
     expect(Math.hypot(resting.transform.position.x, resting.transform.position.z - 23), JSON.stringify(neutralMetrics)).toBeLessThan(0.15);
     expect(Math.hypot(resting.angularVelocity.x, resting.angularVelocity.y, resting.angularVelocity.z)).toBeLessThan(0.1);
+    resting.wheels.forEach(({ suspensionLength }) => {
+      expect(suspensionLength).toBe(0);
+    });
 
     const throttle: PlayerCommand = { ...NEUTRAL_COMMAND, throttle: 1 };
-    simulate(car, world, throttle, step, 360);
+    simulate(car, world, throttle, step, 120);
+    const speedAfterOneSecond = forwardSpeed(car.state());
+    simulate(car, world, throttle, step, 120);
+    const speedAfterTwoSeconds = forwardSpeed(car.state());
+    simulate(car, world, throttle, step, 120);
     const driving = car.state();
+    const accelerationMetrics = { speedAfterOneSecond, speedAfterTwoSeconds, driving };
+    expect(speedAfterOneSecond, JSON.stringify(accelerationMetrics)).toBeGreaterThan(18);
+    expect(speedAfterTwoSeconds, JSON.stringify(accelerationMetrics)).toBeGreaterThan(30);
+    expect(speedAfterTwoSeconds, JSON.stringify(accelerationMetrics)).toBeLessThanOrEqual(
+      DEFAULT_CAR_TUNING.maximumGroundDriveSpeed + 0.5,
+    );
     expect(Number.isFinite(driving.transform.position.x)).toBe(true);
     expect(Number.isFinite(driving.transform.position.y)).toBe(true);
     expect(Number.isFinite(driving.transform.position.z)).toBe(true);
@@ -50,7 +64,7 @@ describe('Car stability', () => {
     expect(driving.transform.position.y).toBeGreaterThan(0.3);
     expect(driving.transform.position.y).toBeLessThan(3);
     expect(Math.hypot(driving.angularVelocity.x, driving.angularVelocity.y, driving.angularVelocity.z)).toBeLessThan(8);
-  });
+  }, 10_000);
 
   it.each([
     ['left', -1, -1],
@@ -70,6 +84,129 @@ describe('Car stability', () => {
     expect(state.grounded).toBe(true);
   });
 
+  it('stops rotating promptly when normal steering is released', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / 120;
+
+    simulate(car, world, NEUTRAL_COMMAND, step, 180);
+    simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1 }, step, 120);
+    simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1, steer: 1 }, step, 120);
+    const yawBeforeRelease = Math.abs(car.state().angularVelocity.y);
+    simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1 }, step, 30);
+    const state = car.state();
+    const yawAfterRelease = Math.abs(state.angularVelocity.y);
+
+    const metrics = { yawBeforeRelease, yawAfterRelease, state };
+    expect(yawBeforeRelease, JSON.stringify(metrics)).toBeGreaterThan(0.4);
+    expect(yawAfterRelease, JSON.stringify(metrics)).toBeLessThan(yawBeforeRelease * 0.2);
+    expect(state.grounded, JSON.stringify(metrics)).toBe(true);
+  });
+
+  it('regains steering without sliding after braking to a stop', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / 120;
+
+    simulate(car, world, NEUTRAL_COMMAND, step, 180);
+    simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1 }, step, 120);
+    for (let tick = 0; tick < 120 && forwardSpeed(car.state()) > 0.3; tick += 1) {
+      simulate(car, world, { ...NEUTRAL_COMMAND, throttle: -1, steer: 1 }, step, 1);
+    }
+    simulate(car, world, NEUTRAL_COMMAND, step, 60);
+    const beforeRestart = car.state();
+    const initialForward = rotateVector(beforeRestart.transform.rotation, { x: 0, y: 0, z: -1 });
+
+    simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1, steer: 1 }, step, 60);
+    const restarted = car.state();
+    const metrics = cornerMetrics(restarted);
+    const restartedForward = rotateVector(restarted.transform.rotation, { x: 0, y: 0, z: -1 });
+    const headingChange = Math.acos(Math.max(-1, Math.min(1,
+      initialForward.x * restartedForward.x
+        + initialForward.y * restartedForward.y
+        + initialForward.z * restartedForward.z,
+    )));
+    const diagnostic = { headingChange, metrics, beforeRestart, restarted };
+
+    expect(Math.abs(forwardSpeed(beforeRestart)), JSON.stringify(diagnostic)).toBeLessThan(0.1);
+    expect(forwardSpeed(restarted), JSON.stringify(diagnostic)).toBeGreaterThan(6);
+    expect(Math.abs(restarted.angularVelocity.y), JSON.stringify(diagnostic)).toBeGreaterThan(0.25);
+    expect(headingChange, JSON.stringify(diagnostic)).toBeGreaterThan(0.07);
+    expect(metrics.slipRatio, JSON.stringify(diagnostic)).toBeLessThan(0.1);
+    expect(restarted.grounded, JSON.stringify(diagnostic)).toBe(true);
+  });
+
+  it('changes steering direction without breaking traction', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / 120;
+
+    simulate(car, world, NEUTRAL_COMMAND, step, 180);
+    simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1 }, step, 120);
+    simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1, steer: 1 }, step, 90);
+    const rightTurnYaw = car.state().angularVelocity.y;
+    let maximumReversalSlip = 0;
+    for (let tick = 0; tick < 60; tick += 1) {
+      simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1, steer: -1 }, step, 1);
+      maximumReversalSlip = Math.max(maximumReversalSlip, cornerMetrics(car.state()).slipRatio);
+    }
+    const reversed = car.state();
+    const diagnostic = { rightTurnYaw, maximumReversalSlip, reversed };
+
+    expect(rightTurnYaw, JSON.stringify(diagnostic)).toBeLessThan(-0.5);
+    expect(maximumReversalSlip, JSON.stringify(diagnostic)).toBeLessThan(0.08);
+    expect(reversed.angularVelocity.y, JSON.stringify(diagnostic)).toBeGreaterThan(0.2);
+    expect(reversed.grounded, JSON.stringify(diagnostic)).toBe(true);
+  });
+
+  it('holds the same full-speed turning radius after reversing a circle', async () => {
+    world = await RapierPhysicsWorld.create();
+    world.createFixedCollider(
+      { position: { x: 0, y: -0.5, z: 0 } },
+      {
+        shape: { type: 'box', halfExtents: { x: 200, y: 0.5, z: 200 } },
+        friction: 0.82,
+        restitution: 0,
+      },
+    );
+    const car = new Car(world);
+    const step = 1 / 120;
+
+    simulate(car, world, NEUTRAL_COMMAND, step, 180);
+    car.teleport(
+      { position: { x: 0, y: 0.54, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } },
+      { x: 0, y: 0, z: -DEFAULT_CAR_TUNING.maximumGroundDriveSpeed },
+    );
+    simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1, steer: 1 }, step, 90);
+    const rightCircle = traceTurn(car, world, 1, step, 360);
+
+    let maximumReversalSlip = 0;
+    for (let tick = 0; tick < 90; tick += 1) {
+      simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1, steer: -1 }, step, 1);
+      maximumReversalSlip = Math.max(maximumReversalSlip, cornerMetrics(car.state()).slipRatio);
+    }
+    const leftCircle = traceTurn(car, world, -1, step, 360);
+    const radiusDifference = Math.abs(rightCircle.radius - leftCircle.radius)
+      / ((rightCircle.radius + leftCircle.radius) * 0.5);
+    const diagnostic = { rightCircle, maximumReversalSlip, leftCircle, radiusDifference };
+
+    expect(rightCircle.averageSpeed, JSON.stringify(diagnostic)).toBeGreaterThan(
+      DEFAULT_CAR_TUNING.maximumGroundDriveSpeed - 3,
+    );
+    expect(leftCircle.averageSpeed, JSON.stringify(diagnostic)).toBeGreaterThan(
+      DEFAULT_CAR_TUNING.maximumGroundDriveSpeed - 3,
+    );
+    expect(Math.abs(rightCircle.radius - DEFAULT_CAR_TUNING.groundTurnRadius), JSON.stringify(diagnostic)).toBeLessThan(1);
+    expect(Math.abs(leftCircle.radius - DEFAULT_CAR_TUNING.groundTurnRadius), JSON.stringify(diagnostic)).toBeLessThan(1);
+    expect(radiusDifference, JSON.stringify(diagnostic)).toBeLessThan(0.02);
+    expect(maximumReversalSlip, JSON.stringify(diagnostic)).toBeLessThan(0.05);
+    expect(rightCircle.maximumSlip, JSON.stringify(diagnostic)).toBeLessThan(0.05);
+    expect(leftCircle.maximumSlip, JSON.stringify(diagnostic)).toBeLessThan(0.05);
+  }, 10_000);
+
   it('uses controlled boost thrust while retaining enough lift to fly', async () => {
     world = await RapierPhysicsWorld.create();
     const body = world.createDynamicBody(
@@ -87,11 +224,11 @@ describe('Car stability', () => {
       world.step(step);
     }
 
-    expect(DEFAULT_CAR_TUNING.boostForce).toBe(24_000);
-    expect(body.position().y).toBeGreaterThan(8);
-    expect(body.position().y).toBeLessThan(10);
-    expect(body.linearVelocity().y).toBeGreaterThan(6);
-    expect(body.linearVelocity().y).toBeLessThan(9);
+    expect(DEFAULT_CAR_TUNING.boostForce).toBe(24_000 * VEHICLE_CONFIG.boostAccelerationMultiplier);
+    expect(body.position().y).toBeGreaterThan(12);
+    expect(body.position().y).toBeLessThan(13.5);
+    expect(body.linearVelocity().y).toBeGreaterThan(14);
+    expect(body.linearVelocity().y).toBeLessThan(16.5);
   });
 
   it('brakes before engaging reverse when throttle opposes forward motion', async () => {
@@ -129,7 +266,7 @@ describe('Car stability', () => {
     simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1, boost: true }, step, 360);
     const speed = forwardSpeed(car.state());
 
-    expect(DEFAULT_CAR_TUNING.boostForce).toBe(24_000);
+    expect(DEFAULT_CAR_TUNING.boostForce).toBe(24_000 * VEHICLE_CONFIG.boostAccelerationMultiplier);
     expect(speed).toBeGreaterThan(DEFAULT_CAR_TUNING.maximumGroundBoostSpeed - 2);
     expect(speed).toBeLessThanOrEqual(DEFAULT_CAR_TUNING.maximumGroundBoostSpeed + 0.5);
   });
@@ -241,7 +378,7 @@ describe('Car stability', () => {
     const state = car.state();
     const up = rotateVector(state.transform.rotation, { x: 0, y: 1, z: 0 });
     const metrics = { maximumReboundSpeed, lostContactCount, up, state };
-    expect(maximumReboundSpeed, JSON.stringify(metrics)).toBeLessThan(2);
+    expect(maximumReboundSpeed, JSON.stringify(metrics)).toBeLessThan(4);
     expect(lostContactCount, JSON.stringify(metrics)).toBeLessThanOrEqual(1);
     expect(state.grounded, JSON.stringify(metrics)).toBe(true);
     expect(up.y, JSON.stringify(metrics)).toBeGreaterThan(0.95);
@@ -283,6 +420,47 @@ const cornerMetrics = (state: CarState): {
     turnRadius: forwardSpeed / Math.max(0.01, Math.abs(state.angularVelocity.y)),
   };
 };
+
+const traceTurn = (
+  car: Car,
+  world: PhysicsWorld,
+  steer: number,
+  step: number,
+  ticks: number,
+): { readonly radius: number; readonly averageSpeed: number; readonly maximumSlip: number } => {
+  let previous = car.state();
+  let previousHeading = velocityHeading(previous);
+  let distance = 0;
+  let headingChange = 0;
+  let speedTotal = 0;
+  let maximumSlip = 0;
+  for (let tick = 0; tick < ticks; tick += 1) {
+    simulate(car, world, { ...NEUTRAL_COMMAND, throttle: 1, steer }, step, 1);
+    const state = car.state();
+    distance += Math.hypot(
+      state.transform.position.x - previous.transform.position.x,
+      state.transform.position.z - previous.transform.position.z,
+    );
+    const heading = velocityHeading(state);
+    headingChange += Math.abs(wrapAngle(heading - previousHeading));
+    speedTotal += Math.hypot(state.linearVelocity.x, state.linearVelocity.z);
+    maximumSlip = Math.max(maximumSlip, cornerMetrics(state).slipRatio);
+    previous = state;
+    previousHeading = heading;
+  }
+  return {
+    radius: distance / Math.max(0.01, headingChange),
+    averageSpeed: speedTotal / ticks,
+    maximumSlip,
+  };
+};
+
+const velocityHeading = (state: CarState): number => Math.atan2(
+  state.linearVelocity.x,
+  -state.linearVelocity.z,
+);
+
+const wrapAngle = (angle: number): number => Math.atan2(Math.sin(angle), Math.cos(angle));
 
 const forwardSpeed = (state: CarState): number => {
   const forward = rotateVector(state.transform.rotation, { x: 0, y: 0, z: -1 });

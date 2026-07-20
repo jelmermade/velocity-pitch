@@ -19,8 +19,10 @@ export type CoefficientCombineRule = 'average' | 'min' | 'multiply' | 'max';
 
 export interface ColliderOptions {
   readonly shape: ColliderShape;
+  readonly localPosition?: Vec3;
   readonly mass?: number;
   readonly friction?: number;
+  readonly frictionCombineRule?: CoefficientCombineRule;
   readonly restitution?: number;
   readonly restitutionCombineRule?: CoefficientCombineRule;
   readonly sensor?: boolean;

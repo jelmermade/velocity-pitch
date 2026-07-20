@@ -4,9 +4,8 @@ import { WHEEL_CONNECTIONS } from '../../src/gameplay/car/WheelState';
 import { CarView } from '../../src/rendering/views/CarView';
 
 describe('car wheel rendering', () => {
-  it('keeps wheels attached to local suspension mounts even when network positions are stale', () => {
+  it('keeps rigid wheels attached to local mounts even when network positions are stale', () => {
     const view = new CarView();
-    const suspensionLength = 0.18;
     const state: CarState = {
       transform: {
         position: { x: 40, y: 8, z: -30 },
@@ -19,7 +18,7 @@ describe('car wheel rendering', () => {
         contactPoint: { x: -100, y: -100, z: -100 },
         position: { x: -100, y: -100, z: -100 },
         grounded: true,
-        suspensionLength,
+        suspensionLength: 0,
         steeringAngle: 0,
         spinAngle: 0,
       })),
@@ -34,7 +33,7 @@ describe('car wheel rendering', () => {
       const wheel = view.group.getObjectByName(`wheel-${index}`);
       expect(wheel?.parent).toBe(view.group);
       expect(wheel?.position.x).toBeCloseTo(connection.x);
-      expect(wheel?.position.y).toBeCloseTo(connection.y - suspensionLength);
+      expect(wheel?.position.y).toBeCloseTo(connection.y);
       expect(wheel?.position.z).toBeCloseTo(connection.z);
     });
     view.dispose();

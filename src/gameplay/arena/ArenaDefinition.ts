@@ -10,6 +10,14 @@ export interface ArenaSurface {
   readonly rotation: Quat;
   readonly kind: ArenaSurfaceKind;
   readonly glass: boolean;
+  readonly curveStartNormal?: Vec3;
+  readonly curveEndNormal?: Vec3;
+  readonly curveLocation?: 'floor' | 'ceiling';
+  readonly curveProfileIndex?: number;
+  readonly curveProfileSegments?: number;
+  readonly curveBoundaryIndex?: number;
+  readonly boundaryKind?: 'wall' | 'goal';
+  readonly boundarySectionType?: BoundarySectionType;
 }
 
 export interface ArenaBoundarySegment {
@@ -21,7 +29,10 @@ export interface ArenaBoundarySegment {
   readonly halfSpan: number;
   readonly kind: 'wall' | 'goal';
   readonly curve: boolean;
+  readonly sectionType: BoundarySectionType;
 }
+
+export type BoundarySectionType = 'straightWall' | 'chamferWall' | 'filletArc' | 'goalTransition';
 
 export interface GoalDefinition {
   readonly teamScored: 'azure' | 'coral';
@@ -35,12 +46,37 @@ interface Vec2 {
   readonly z: number;
 }
 
-interface BoundaryVertex {
+interface BoundaryControlPoint {
   readonly point: Vec2;
   readonly radius: number;
   readonly arcKind: 'wall' | 'goal';
   readonly edgeKind: 'wall' | 'goal';
+  readonly outgoingSection: 'straightWall' | 'chamferWall';
+  readonly filletSegments?: number;
 }
+
+interface StraightWallSection {
+  readonly type: 'straightWall';
+  readonly start: Vec2;
+  readonly end: Vec2;
+  readonly kind: 'wall' | 'goal';
+}
+
+interface ChamferWallSection {
+  readonly type: 'chamferWall';
+  readonly start: Vec2;
+  readonly end: Vec2;
+  readonly kind: 'wall';
+}
+
+interface FilletArcSection {
+  readonly type: 'filletArc';
+  readonly fillet: Fillet;
+  readonly kind: 'wall' | 'goal';
+  readonly segmentCount: number;
+}
+
+type BoundarySection = StraightWallSection | ChamferWallSection | FilletArcSection;
 
 interface Fillet {
   readonly start: Vec2;
@@ -51,19 +87,19 @@ interface Fillet {
   readonly angleDelta: number;
 }
 
-interface TransitionBoundary {
+interface WallTransitionBoundary {
   readonly midpoint: Vec3;
   readonly tangent: Vec3;
   readonly outward: Vec3;
   readonly halfSpan: number;
   readonly startTurn: number;
   readonly endTurn: number;
-  readonly bottom: boolean;
-  readonly top: boolean;
+  readonly boundaryIndex: number;
+  readonly boundaryKind: 'wall' | 'goal';
+  readonly sectionType: BoundarySectionType;
 }
 
-const WALL_HALF_THICKNESS = 0.45;
-const SEGMENT_OVERLAP = 0.08;
+export const ARENA_WALL_HALF_THICKNESS = 0.45;
 
 const yawRotation = (yaw: number): Quat => ({
   x: 0,
@@ -89,41 +125,47 @@ const surface = (
   glass: kind === 'wall' || kind === 'curve' || kind === 'ceiling',
 });
 
-const createBoundaryVertices = (): readonly BoundaryVertex[] => {
+const createBoundaryControlPoints = (): readonly BoundaryControlPoint[] => {
   const {
     halfWidth,
     halfLength,
     goalHalfWidth,
     goalDepth,
-    goalTransitionOuterX,
     goalTransitionDepth,
     goalTransitionRadius,
     goalBackCornerRadius,
-    cornerRadius,
+    cornerChamferLength,
+    cornerFilletRadius,
+    cornerFilletSegments,
   } = ARENA_TUNING;
-  const mouthZ = halfLength + goalTransitionDepth;
-  const rearZ = mouthZ + goalDepth;
+  const mouthZ = halfLength;
+  const rearZ = halfLength + goalTransitionDepth + goalDepth;
   const wall = 'wall' as const;
   const goal = 'goal' as const;
+  const straightWall = 'straightWall' as const;
+  const chamferWall = 'chamferWall' as const;
+  const cornerInset = (
+    cornerChamferLength + 2 * cornerFilletRadius * Math.tan(Math.PI / 8)
+  ) / Math.SQRT2;
 
   // Clockwise ordering keeps the playable area on the right of every segment.
   return [
-    { point: { x: -goalHalfWidth, z: rearZ }, radius: goalBackCornerRadius, arcKind: goal, edgeKind: goal },
-    { point: { x: goalHalfWidth, z: rearZ }, radius: goalBackCornerRadius, arcKind: goal, edgeKind: goal },
-    { point: { x: goalHalfWidth, z: mouthZ }, radius: goalTransitionRadius, arcKind: goal, edgeKind: wall },
-    { point: { x: goalTransitionOuterX, z: halfLength }, radius: goalTransitionRadius, arcKind: wall, edgeKind: wall },
-    { point: { x: halfWidth, z: halfLength }, radius: cornerRadius, arcKind: wall, edgeKind: wall },
-    { point: { x: halfWidth, z: -halfLength }, radius: cornerRadius, arcKind: wall, edgeKind: wall },
-    { point: { x: goalTransitionOuterX, z: -halfLength }, radius: goalTransitionRadius, arcKind: wall, edgeKind: wall },
-    { point: { x: goalHalfWidth, z: -mouthZ }, radius: goalTransitionRadius, arcKind: goal, edgeKind: goal },
-    { point: { x: goalHalfWidth, z: -rearZ }, radius: goalBackCornerRadius, arcKind: goal, edgeKind: goal },
-    { point: { x: -goalHalfWidth, z: -rearZ }, radius: goalBackCornerRadius, arcKind: goal, edgeKind: goal },
-    { point: { x: -goalHalfWidth, z: -mouthZ }, radius: goalTransitionRadius, arcKind: goal, edgeKind: wall },
-    { point: { x: -goalTransitionOuterX, z: -halfLength }, radius: goalTransitionRadius, arcKind: wall, edgeKind: wall },
-    { point: { x: -halfWidth, z: -halfLength }, radius: cornerRadius, arcKind: wall, edgeKind: wall },
-    { point: { x: -halfWidth, z: halfLength }, radius: cornerRadius, arcKind: wall, edgeKind: wall },
-    { point: { x: -goalTransitionOuterX, z: halfLength }, radius: goalTransitionRadius, arcKind: wall, edgeKind: wall },
-    { point: { x: -goalHalfWidth, z: mouthZ }, radius: goalTransitionRadius, arcKind: goal, edgeKind: goal },
+    { point: { x: -goalHalfWidth, z: rearZ }, radius: goalBackCornerRadius, arcKind: goal, edgeKind: goal, outgoingSection: straightWall },
+    { point: { x: goalHalfWidth, z: rearZ }, radius: goalBackCornerRadius, arcKind: goal, edgeKind: goal, outgoingSection: straightWall },
+    { point: { x: goalHalfWidth, z: mouthZ }, radius: goalTransitionRadius, arcKind: wall, edgeKind: wall, outgoingSection: straightWall },
+    { point: { x: halfWidth - cornerInset, z: halfLength }, radius: cornerFilletRadius, arcKind: wall, edgeKind: wall, outgoingSection: chamferWall, filletSegments: cornerFilletSegments },
+    { point: { x: halfWidth, z: halfLength - cornerInset }, radius: cornerFilletRadius, arcKind: wall, edgeKind: wall, outgoingSection: straightWall, filletSegments: cornerFilletSegments },
+    { point: { x: halfWidth, z: -halfLength + cornerInset }, radius: cornerFilletRadius, arcKind: wall, edgeKind: wall, outgoingSection: chamferWall, filletSegments: cornerFilletSegments },
+    { point: { x: halfWidth - cornerInset, z: -halfLength }, radius: cornerFilletRadius, arcKind: wall, edgeKind: wall, outgoingSection: straightWall, filletSegments: cornerFilletSegments },
+    { point: { x: goalHalfWidth, z: -mouthZ }, radius: goalTransitionRadius, arcKind: wall, edgeKind: goal, outgoingSection: straightWall },
+    { point: { x: goalHalfWidth, z: -rearZ }, radius: goalBackCornerRadius, arcKind: goal, edgeKind: goal, outgoingSection: straightWall },
+    { point: { x: -goalHalfWidth, z: -rearZ }, radius: goalBackCornerRadius, arcKind: goal, edgeKind: goal, outgoingSection: straightWall },
+    { point: { x: -goalHalfWidth, z: -mouthZ }, radius: goalTransitionRadius, arcKind: wall, edgeKind: wall, outgoingSection: straightWall },
+    { point: { x: -halfWidth + cornerInset, z: -halfLength }, radius: cornerFilletRadius, arcKind: wall, edgeKind: wall, outgoingSection: chamferWall, filletSegments: cornerFilletSegments },
+    { point: { x: -halfWidth, z: -halfLength + cornerInset }, radius: cornerFilletRadius, arcKind: wall, edgeKind: wall, outgoingSection: straightWall, filletSegments: cornerFilletSegments },
+    { point: { x: -halfWidth, z: halfLength - cornerInset }, radius: cornerFilletRadius, arcKind: wall, edgeKind: wall, outgoingSection: chamferWall, filletSegments: cornerFilletSegments },
+    { point: { x: -halfWidth + cornerInset, z: halfLength }, radius: cornerFilletRadius, arcKind: wall, edgeKind: wall, outgoingSection: straightWall, filletSegments: cornerFilletSegments },
+    { point: { x: -goalHalfWidth, z: mouthZ }, radius: goalTransitionRadius, arcKind: wall, edgeKind: goal, outgoingSection: straightWall },
   ];
 };
 
@@ -150,29 +192,55 @@ const createFillet = (previous: Vec2, vertex: Vec2, next: Vec2, requestedRadius:
   };
 };
 
-const createHorizontalBoundary = (): ArenaBoundarySegment[] => {
-  const vertices = createBoundaryVertices();
-  const fillets = vertices.map(({ point, radius }, index) => createFillet(
-    vertices[(index - 1 + vertices.length) % vertices.length]?.point ?? point,
+const createBoundarySections = (): readonly BoundarySection[] => {
+  const controlPoints = createBoundaryControlPoints();
+  const fillets = controlPoints.map(({ point, radius }, index) => createFillet(
+    controlPoints[(index - 1 + controlPoints.length) % controlPoints.length]?.point ?? point,
     point,
-    vertices[(index + 1) % vertices.length]?.point ?? point,
+    controlPoints[(index + 1) % controlPoints.length]?.point ?? point,
     radius,
   ));
-  const segments: ArenaBoundarySegment[] = [];
+  const sections: BoundarySection[] = [];
 
-  vertices.forEach((vertex, index) => {
+  controlPoints.forEach((controlPoint, index) => {
     const fillet = fillets[index];
     const nextFillet = fillets[(index + 1) % fillets.length];
+    const nextControlPoint = controlPoints[(index + 1) % controlPoints.length];
     if (!fillet || !nextFillet) return;
-    pushBoundarySegment(segments, fillet.end, nextFillet.start, vertex.edgeKind, false);
+    if (controlPoint.outgoingSection === 'chamferWall') {
+      sections.push({
+        type: 'chamferWall',
+        start: fillet.end,
+        end: nextFillet.start,
+        kind: 'wall',
+      });
+    } else {
+      sections.push({
+        type: 'straightWall',
+        start: fillet.end,
+        end: nextFillet.start,
+        kind: controlPoint.edgeKind,
+      });
+    }
+    sections.push({
+      type: 'filletArc',
+      fillet: nextFillet,
+      kind: nextControlPoint?.arcKind ?? 'wall',
+      segmentCount: nextControlPoint?.filletSegments ?? 6,
+    });
+  });
+  return sections;
+};
 
-    const arc = nextFillet;
-    const arcKind = vertices[(index + 1) % vertices.length]?.arcKind ?? 'wall';
-    const segmentCount = Math.max(6, Math.ceil(
-      Math.abs(arc.angleDelta) / (Math.PI / 2)
-      * ARENA_TUNING.horizontalCurveSegments
-      * Math.sqrt(arc.radius / ARENA_TUNING.cornerRadius),
-    ));
+const sampleBoundarySections = (sections: readonly BoundarySection[]): ArenaBoundarySegment[] => {
+  const segments: ArenaBoundarySegment[] = [];
+  sections.forEach((section) => {
+    if (section.type === 'straightWall' || section.type === 'chamferWall') {
+      pushBoundarySegment(segments, section.start, section.end, section.kind, section.type);
+      return;
+    }
+    const arc = section.fillet;
+    const segmentCount = section.segmentCount;
     for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
       const startRatio = segmentIndex / segmentCount;
       const endRatio = (segmentIndex + 1) / segmentCount;
@@ -182,10 +250,58 @@ const createHorizontalBoundary = (): ArenaBoundarySegment[] => {
       const end = segmentIndex === segmentCount - 1
         ? arc.end
         : pointOnArc(arc, endRatio);
-      pushBoundarySegment(segments, start, end, arcKind, true);
+      pushGoalMouthAlignedSegment(segments, start, end, section.kind, section.type);
     }
   });
   return segments;
+};
+
+const pushGoalMouthAlignedSegment = (
+  segments: ArenaBoundarySegment[],
+  start: Vec2,
+  end: Vec2,
+  kind: 'wall' | 'goal',
+  sectionType: BoundarySectionType,
+): void => {
+  if (kind !== 'goal') {
+    pushBoundarySegment(segments, start, end, kind, sectionType);
+    return;
+  }
+
+  const mouthZ = ARENA_TUNING.halfLength + ARENA_TUNING.goalTransitionDepth;
+  const startDepth = Math.abs(start.z) - mouthZ;
+  const endDepth = Math.abs(end.z) - mouthZ;
+  if (startDepth * endDepth < 0) {
+    const targetZ = Math.sign(start.z + end.z) * mouthZ;
+    const ratio = (targetZ - start.z) / (end.z - start.z);
+    const mouthPoint = {
+      x: start.x + (end.x - start.x) * ratio,
+      z: targetZ,
+    };
+    pushBoundarySegment(
+      segments,
+      start,
+      mouthPoint,
+      startDepth > 0 ? 'goal' : 'wall',
+      sectionType,
+    );
+    pushBoundarySegment(
+      segments,
+      mouthPoint,
+      end,
+      endDepth > 0 ? 'goal' : 'wall',
+      sectionType,
+    );
+    return;
+  }
+
+  pushBoundarySegment(
+    segments,
+    start,
+    end,
+    (startDepth + endDepth) / 2 >= 0 ? 'goal' : 'wall',
+    sectionType,
+  );
 };
 
 const pushBoundarySegment = (
@@ -193,7 +309,7 @@ const pushBoundarySegment = (
   start2D: Vec2,
   end2D: Vec2,
   kind: 'wall' | 'goal',
-  curve: boolean,
+  sectionType: BoundarySectionType,
 ): void => {
   const start = { x: start2D.x, y: 0, z: start2D.z };
   const end = { x: end2D.x, y: 0, z: end2D.z };
@@ -210,58 +326,54 @@ const pushBoundarySegment = (
     outward,
     halfSpan: segmentLength / 2,
     kind,
-    curve,
+    curve: sectionType === 'filletArc' || sectionType === 'goalTransition',
+    sectionType,
   });
 };
 
 const createWallSurfaces = (): ArenaSurface[] => ARENA_BOUNDARY_SEGMENTS.map((boundary) => {
   const isGoal = boundary.kind === 'goal';
   const halfHeight = isGoal
-    ? ARENA_TUNING.goalHeight / 2
-    : (ARENA_TUNING.height - ARENA_TUNING.verticalCurveRadius * 2) / 2;
-  const centerHeight = isGoal ? halfHeight : ARENA_TUNING.height / 2;
-  const position = add(boundary.midpoint, scale(boundary.outward, WALL_HALF_THICKNESS));
+    ? (ARENA_TUNING.goalHeight - ARENA_TUNING.floorWallCurveRadius) / 2
+    : (ARENA_TUNING.height - ARENA_TUNING.floorWallCurveRadius * 2) / 2;
+  const centerHeight = isGoal
+    ? ARENA_TUNING.floorWallCurveRadius + halfHeight
+    : ARENA_TUNING.height / 2;
+  const position = add(boundary.midpoint, scale(boundary.outward, ARENA_WALL_HALF_THICKNESS));
   return {
     ...surface(
       position.x,
       centerHeight,
       position.z,
-      boundary.halfSpan + SEGMENT_OVERLAP,
+      boundary.halfSpan,
       halfHeight,
-      WALL_HALF_THICKNESS,
+      ARENA_WALL_HALF_THICKNESS,
       boundary.kind,
       Math.atan2(-boundary.tangent.z, boundary.tangent.x),
     ),
-    glass: true,
+    glass: !isGoal,
+    boundaryKind: boundary.kind,
+    boundarySectionType: boundary.sectionType,
   };
 });
 
-const createHeaderBoundaries = (): TransitionBoundary[] => {
-  const mouthZ = ARENA_TUNING.halfLength + ARENA_TUNING.goalTransitionDepth;
-  return ([-1, 1] as const).map((zSign) => ({
-    midpoint: { x: 0, y: 0, z: zSign * mouthZ },
-    tangent: { x: 1, y: 0, z: 0 },
-    outward: { x: 0, y: 0, z: zSign },
-    halfSpan: ARENA_TUNING.goalHalfWidth,
-    startTurn: 0,
-    endTurn: 0,
-    bottom: false,
-    top: true,
-  }));
-};
-
 const createHeaderSurfaces = (): ArenaSurface[] => {
-  const headerTop = ARENA_TUNING.height - ARENA_TUNING.verticalCurveRadius;
+  const mouthZ = ARENA_TUNING.halfLength;
+  const headerTop = ARENA_TUNING.height - ARENA_TUNING.floorWallCurveRadius;
   const halfHeight = (headerTop - ARENA_TUNING.goalHeight) / 2;
-  return createHeaderBoundaries().map((boundary) => {
-    const position = add(boundary.midpoint, scale(boundary.outward, WALL_HALF_THICKNESS));
+  return ([-1, 1] as const).map((zSign) => {
+    const position = {
+      x: 0,
+      y: 0,
+      z: zSign * (mouthZ + ARENA_WALL_HALF_THICKNESS),
+    };
     return surface(
       position.x,
       ARENA_TUNING.goalHeight + halfHeight,
       position.z,
-      boundary.halfSpan,
+      GOAL_MOUTH_BOUNDARY_HALF_WIDTH,
       halfHeight,
-      WALL_HALF_THICKNESS,
+      ARENA_WALL_HALF_THICKNESS,
       'wall',
     );
   });
@@ -271,107 +383,146 @@ const createGoalFloorAndRoof = (zSign: -1 | 1): ArenaSurface[] => {
   const mouthZ = ARENA_TUNING.halfLength + ARENA_TUNING.goalTransitionDepth;
   const centerZ = zSign * (mouthZ + ARENA_TUNING.goalDepth / 2);
   return [
-    surface(0, -0.3, centerZ, ARENA_TUNING.goalHalfWidth, 0.3, ARENA_TUNING.goalDepth / 2, 'goal'),
-    {
-      ...surface(
-        0,
-        ARENA_TUNING.goalHeight + 0.3,
-        centerZ,
-        ARENA_TUNING.goalHalfWidth,
-        0.3,
-        ARENA_TUNING.goalDepth / 2,
-        'goal',
-      ),
-      glass: true,
-    },
+    surface(0, -0.3, centerZ, GOAL_MOUTH_BOUNDARY_HALF_WIDTH, 0.3, ARENA_TUNING.goalDepth / 2, 'goal'),
+    surface(
+      0,
+      ARENA_TUNING.goalHeight + 0.3,
+      centerZ,
+      GOAL_MOUTH_BOUNDARY_HALF_WIDTH,
+      0.3,
+      ARENA_TUNING.goalDepth / 2,
+      'goal',
+    ),
   ];
 };
 
-const createTransitionSurfaces = (): ArenaSurface[] => {
-  const { height, verticalCurveRadius: radius, verticalCurveSegments: segmentCount } = ARENA_TUNING;
-  const boundaries: TransitionBoundary[] = [
-    ...ARENA_BOUNDARY_SEGMENTS
-      .flatMap((boundary, index, allBoundaries) => {
-        if (boundary.kind !== 'wall') return [];
-        const previous = allBoundaries[(index - 1 + allBoundaries.length) % allBoundaries.length];
-        const next = allBoundaries[(index + 1) % allBoundaries.length];
-        return [{
-          midpoint: boundary.midpoint,
-          tangent: boundary.tangent,
-          outward: boundary.outward,
-          halfSpan: boundary.halfSpan,
-          startTurn: tangentTurn(previous?.tangent, boundary.tangent),
-          endTurn: tangentTurn(boundary.tangent, next?.tangent),
-          bottom: true,
-          top: true,
-        }];
-      }),
-    ...createHeaderBoundaries(),
-  ];
+const createWallTransitionCurveSurfaces = (): ArenaSurface[] => {
+  const {
+    floorWallCurveRadius: radius,
+    floorWallCurveSegments: segmentCount,
+  } = ARENA_TUNING;
+  const boundaries: WallTransitionBoundary[] = ARENA_BOUNDARY_SEGMENTS
+    .map((boundary, index, allBoundaries) => {
+      const previous = allBoundaries[(index - 1 + allBoundaries.length) % allBoundaries.length];
+      const next = allBoundaries[(index + 1) % allBoundaries.length];
+      return {
+        midpoint: boundary.midpoint,
+        tangent: boundary.tangent,
+        outward: boundary.outward,
+        halfSpan: boundary.halfSpan,
+        startTurn: tangentTurn(previous?.tangent, boundary.tangent),
+        endTurn: tangentTurn(boundary.tangent, next?.tangent),
+        boundaryIndex: index,
+        boundaryKind: boundary.kind,
+        sectionType: boundary.sectionType,
+      };
+    });
+  const mouthZ = ARENA_TUNING.halfLength;
+  const headerBoundaries: WallTransitionBoundary[] = ([-1, 1] as const).map((zSign, index) => ({
+    midpoint: { x: 0, y: 0, z: zSign * mouthZ },
+    tangent: { x: 1, y: 0, z: 0 },
+    outward: { x: 0, y: 0, z: zSign },
+    halfSpan: GOAL_MOUTH_BOUNDARY_HALF_WIDTH,
+    startTurn: 0,
+    endTurn: 0,
+    boundaryIndex: ARENA_BOUNDARY_SEGMENTS.length + index,
+    boundaryKind: 'wall',
+    sectionType: 'straightWall',
+  }));
   const surfaces: ArenaSurface[] = [];
   const halfThickness = 0.16;
 
-  boundaries.forEach((boundary) => {
-    for (const location of ['bottom', 'top'] as const) {
-      if (!boundary[location]) continue;
-      for (let index = 0; index < segmentCount; index += 1) {
-        const a = (index / segmentCount) * Math.PI * 0.5;
-        const b = ((index + 1) / segmentCount) * Math.PI * 0.5;
-        const start = transitionPoint(boundary, location, a, radius, height);
-        const end = transitionPoint(boundary, location, b, radius, height);
-        const crossDirection = normalize(sub(end, start));
-        let xAxis = normalize(boundary.tangent);
-        const zAxis = crossDirection;
-        let yAxis = normalize(cross(zAxis, xAxis));
-        if (dot(yAxis, boundary.outward) < 0) {
-          xAxis = scale(xAxis, -1);
-          yAxis = scale(yAxis, -1);
-        }
-        const surfaceMidpoint = scale(add(start, end), 0.5);
-        const maximumInset = location === 'bottom'
-          ? radius * (1 - Math.sin(a))
-          : radius * (1 - Math.cos(b));
-        const startExtension = miterExtension(maximumInset, boundary.startTurn);
-        const endExtension = miterExtension(maximumInset, boundary.endTurn);
-        const alongBoundary = (endExtension - startExtension) / 2;
-        surfaces.push({
-          position: add(
-            add(surfaceMidpoint, scale(boundary.tangent, alongBoundary)),
-            scale(yAxis, halfThickness),
-          ),
-          halfExtents: {
-            x: boundary.halfSpan + (startExtension + endExtension) / 2 + 0.015,
-            y: halfThickness,
-            z: distance(start, end) / 2 + 0.005,
-          },
-          rotation: quaternionFromBasis(xAxis, yAxis, zAxis),
-          kind: 'curve',
-          glass: true,
-        });
+  const addCurve = (
+    boundary: WallTransitionBoundary,
+    location: 'floor' | 'ceiling',
+  ): void => {
+    const profileSegments = boundary.boundaryKind === 'goal'
+      || boundary.sectionType === 'goalTransition'
+      ? ARENA_TUNING.goalWallCurveSegments
+      : segmentCount;
+    for (let index = 0; index < profileSegments; index += 1) {
+      const a = (index / profileSegments) * Math.PI * 0.5;
+      const b = ((index + 1) / profileSegments) * Math.PI * 0.5;
+      const start = wallTransitionPoint(boundary, location, a, radius);
+      const end = wallTransitionPoint(boundary, location, b, radius);
+      const crossDirection = normalize(sub(end, start));
+      let xAxis = normalize(boundary.tangent);
+      const zAxis = crossDirection;
+      let yAxis = normalize(cross(zAxis, xAxis));
+      if (dot(yAxis, boundary.outward) < 0) {
+        xAxis = scale(xAxis, -1);
+        yAxis = scale(yAxis, -1);
       }
+      const surfaceMidpoint = scale(add(start, end), 0.5);
+      const maximumInset = location === 'floor'
+        ? radius * (1 - Math.sin(a))
+        : radius * (1 - Math.cos(b));
+      const startExtension = miterExtension(maximumInset, boundary.startTurn);
+      const endExtension = miterExtension(maximumInset, boundary.endTurn);
+      const alongBoundary = (endExtension - startExtension) / 2;
+      surfaces.push({
+        position: add(
+          add(surfaceMidpoint, scale(boundary.tangent, alongBoundary)),
+          scale(yAxis, halfThickness),
+        ),
+        halfExtents: {
+          x: boundary.halfSpan + (startExtension + endExtension) / 2,
+          y: halfThickness,
+          z: distance(start, end) / 2,
+        },
+        rotation: quaternionFromBasis(xAxis, yAxis, zAxis),
+        kind: 'curve',
+        glass: true,
+        curveStartNormal: wallTransitionNormal(boundary.outward, location, a),
+        curveEndNormal: wallTransitionNormal(boundary.outward, location, b),
+        curveLocation: location,
+        curveProfileIndex: index,
+        curveProfileSegments: profileSegments,
+        curveBoundaryIndex: boundary.boundaryIndex,
+        boundaryKind: boundary.boundaryKind,
+        boundarySectionType: boundary.sectionType,
+      });
     }
+  };
+
+  boundaries.forEach((boundary) => {
+    addCurve(boundary, 'floor');
+    if (boundary.boundaryKind === 'wall') addCurve(boundary, 'ceiling');
   });
+  headerBoundaries.forEach((boundary) => addCurve(boundary, 'ceiling'));
   return surfaces;
 };
 
-const transitionPoint = (
-  boundary: TransitionBoundary,
-  location: 'bottom' | 'top',
+const wallTransitionNormal = (
+  outward: Vec3,
+  location: 'floor' | 'ceiling',
+  angle: number,
+): Vec3 => location === 'floor'
+  ? {
+      x: -outward.x * Math.sin(angle),
+      y: Math.cos(angle),
+      z: -outward.z * Math.sin(angle),
+    }
+  : {
+      x: -outward.x * Math.cos(angle),
+      y: -Math.sin(angle),
+      z: -outward.z * Math.cos(angle),
+    };
+
+const wallTransitionPoint = (
+  boundary: WallTransitionBoundary,
+  location: 'floor' | 'ceiling',
   angle: number,
   radius: number,
-  height: number,
-): Vec3 => {
-  if (location === 'bottom') {
-    return add(
+): Vec3 => location === 'floor'
+  ? add(
       sub(boundary.midpoint, scale(boundary.outward, radius * (1 - Math.sin(angle)))),
       { x: 0, y: radius * (1 - Math.cos(angle)), z: 0 },
+    )
+  : add(
+      sub(boundary.midpoint, scale(boundary.outward, radius * (1 - Math.cos(angle)))),
+      { x: 0, y: ARENA_TUNING.height - radius + radius * Math.sin(angle), z: 0 },
     );
-  }
-  return add(
-    sub(boundary.midpoint, scale(boundary.outward, radius * (1 - Math.cos(angle)))),
-    { x: 0, y: height - radius + radius * Math.sin(angle), z: 0 },
-  );
-};
 
 const tangentTurn = (left: Vec3 | undefined, right: Vec3 | undefined): number => {
   if (!left || !right) return 0;
@@ -379,7 +530,7 @@ const tangentTurn = (left: Vec3 | undefined, right: Vec3 | undefined): number =>
 };
 
 const miterExtension = (inset: number, turn: number): number => (
-  Math.min(ARENA_TUNING.verticalCurveRadius * 0.3, inset * Math.tan(turn / 2))
+  Math.min(ARENA_TUNING.floorWallCurveRadius * 0.3, inset * Math.tan(turn / 2))
 );
 
 const quaternionFromBasis = (xAxis: Vec3, yAxis: Vec3, zAxis: Vec3): Quat => {
@@ -423,9 +574,22 @@ const normalize2 = (value: Vec2): Vec2 => {
 const clamp = (value: number, minimum: number, maximum: number): number => Math.max(minimum, Math.min(maximum, value));
 const shortestAngle = (angle: number): number => Math.atan2(Math.sin(angle), Math.cos(angle));
 
-export const ARENA_BOUNDARY_SEGMENTS: readonly ArenaBoundarySegment[] = Object.freeze(createHorizontalBoundary());
+export const ARENA_BOUNDARY_SEGMENTS: readonly ArenaBoundarySegment[] = Object.freeze(
+  sampleBoundarySections(createBoundarySections()),
+);
 
 const goalMouthZ = ARENA_TUNING.halfLength + ARENA_TUNING.goalTransitionDepth;
+const goalMouthTolerance = 0.000_01 * ARENA_TUNING.scale;
+const flatBackWalls = ARENA_BOUNDARY_SEGMENTS.filter(({ kind, sectionType, midpoint, tangent }) => (
+  kind === 'wall'
+  && sectionType === 'straightWall'
+  && Math.abs(tangent.z) < goalMouthTolerance
+  && Math.abs(Math.abs(midpoint.z) - ARENA_TUNING.halfLength) < goalMouthTolerance
+));
+
+export const GOAL_MOUTH_BOUNDARY_HALF_WIDTH = Math.min(
+  ...flatBackWalls.flatMap(({ start, end }) => [Math.abs(start.x), Math.abs(end.x)]),
+);
 
 export const ARENA_SURFACES: readonly ArenaSurface[] = Object.freeze([
   surface(0, -0.5, 0, ARENA_TUNING.halfWidth, 0.5, goalMouthZ, 'floor'),
@@ -434,7 +598,7 @@ export const ARENA_SURFACES: readonly ArenaSurface[] = Object.freeze([
   ...createHeaderSurfaces(),
   ...createGoalFloorAndRoof(-1),
   ...createGoalFloorAndRoof(1),
-  ...createTransitionSurfaces(),
+  ...createWallTransitionCurveSurfaces(),
 ]);
 
 export const GOALS: readonly GoalDefinition[] = Object.freeze([
