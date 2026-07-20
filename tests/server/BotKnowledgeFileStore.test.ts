@@ -45,4 +45,15 @@ describe('bot knowledge file store', () => {
     expect(knowledge.generation).toBeGreaterThanOrEqual(0);
     expect(knowledge.schemaVersion).toBe(1);
   });
+
+  it('honors an explicit generation-zero reset instead of bundled history', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'velocity-pitch-knowledge-'));
+    const path = join(directory, 'bot-knowledge.json');
+    await writeFile(path, JSON.stringify(normalizeBotKnowledge({ generation: 0 })), 'utf8');
+
+    const knowledge = await new BotKnowledgeFileStore(path).load();
+
+    expect(knowledge.generation).toBe(0);
+    expect(knowledge.roles.striker.balanced).toEqual({ value: 0, samples: 0 });
+  });
 });

@@ -13,11 +13,12 @@ import { GOALS } from '../arena/ArenaDefinition';
 import { detectScoringTeam } from '../arena/GoalVolume';
 import { Ball } from '../ball/Ball';
 import { BoostPickupSystem } from '../boost/BoostPickupSystem';
-import { Car, type CarSpawn } from '../car/Car';
+import { Car } from '../car/Car';
 import { resolveDemolition } from '../car/DemolitionSystem';
 import { GoalExplosionSystem } from '../effects/GoalExplosionSystem';
 import { MatchController } from '../match/MatchController';
 import { carTuningForMatch, DEFAULT_MATCH_SETTINGS, type MatchSettings } from '../match/MatchSettings';
+import { kickoffSpawnFor, kickoffSpawnGroupForRoster } from '../match/KickoffSpawns';
 import type { CarTuning } from '../../core/config/CarTuning';
 import { createVictoryLineup, VICTORY_ROTATION } from '../match/VictoryLineup';
 import { GoalReplayBuffer } from '../replay/GoalReplayBuffer';
@@ -53,10 +54,20 @@ export class GameSimulation {
     createArena(world);
     this.carTuning = carTuningForMatch(settings);
     const teamSlots: Record<TeamId, number> = { azure: 0, coral: 0 };
+    const teamSizes: Record<TeamId, number> = {
+      azure: this.players.filter(({ team }) => team === 'azure').length,
+      coral: this.players.filter(({ team }) => team === 'coral').length,
+    };
+    const spawnGroup = kickoffSpawnGroupForRoster(this.players);
     this.players.forEach((player) => {
       const teamSlot = teamSlots[player.team];
       teamSlots[player.team] += 1;
-      this.cars.set(player.id, new Car(world, this.carTuning, spawnFor(player, teamSlot)));
+      const teamSize = Math.min(3, Math.max(1, teamSizes[player.team])) as 1 | 2 | 3;
+      this.cars.set(player.id, new Car(
+        world,
+        this.carTuning,
+        kickoffSpawnFor(player.team, teamSlot, teamSize, spawnGroup),
+      ));
     });
     if (!this.cars.has(this.localPlayerId)) throw new Error('Local player is missing from the simulation roster');
     this.ball = new Ball(world);
@@ -353,14 +364,3 @@ export class GameSimulation {
     return car;
   }
 }
-
-const spawnFor = (player: LobbyPlayer, teamSlot: number): CarSpawn => {
-  const lateralSpacing = ARENA_TUNING.halfWidth * 0.235;
-  const xOffsets = [0, -lateralSpacing, lateralSpacing, -lateralSpacing * 2, lateralSpacing * 2] as const;
-  const x = xOffsets[teamSlot] ?? 0;
-  const z = ARENA_TUNING.halfLength * 0.46;
-  if (player.team === 'azure') {
-    return { position: { x, y: 0.62, z }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
-  }
-  return { position: { x: -x, y: 0.62, z: -z }, rotation: { x: 0, y: 1, z: 0, w: 0 } };
-};

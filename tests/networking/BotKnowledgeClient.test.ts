@@ -28,6 +28,17 @@ describe('shared bot knowledge client', () => {
     expect(request).toHaveBeenCalledWith('/knowledge', { headers: { Accept: 'application/json' } });
   });
 
+  it('loads an explicit generation-zero shared reset', async () => {
+    const reset = normalizeBotKnowledge({ generation: 0 });
+    const request = vi.fn((): Promise<Pick<Response, 'json' | 'ok'>> => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve(reset),
+    }));
+    const { loadSharedBotKnowledge } = await import('../../src/networking/BotKnowledgeClient');
+
+    await expect(loadSharedBotKnowledge(request, '/knowledge')).resolves.toEqual(reset);
+  });
+
   it('submits observations without uploading a full model snapshot', async () => {
     const observations = createEmptyBotKnowledgeObservations();
     observations.defender.balanced = { totalValue: 0.2, samples: 4 };

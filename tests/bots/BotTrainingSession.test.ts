@@ -9,9 +9,11 @@ import {
 } from '../../src/gameplay/bots/BotKnowledge';
 import type { AuthoritativeFrame } from '../../src/networking/LobbyProtocol';
 
+const TEST_RANDOM = (): number => 0.999999;
+
 describe('bot training session', () => {
   it('commands all six bots, preserves pause input, and rewards a useful touch', () => {
-    const session = new BotTrainingSession();
+    const session = new BotTrainingSession(BUILT_IN_BOT_KNOWLEDGE, undefined, TEST_RANDOM);
     const before = frameFor(session, 0, 0, 0);
     const after = frameFor(session, 1, -1, -5);
 
@@ -30,6 +32,7 @@ describe('bot training session', () => {
     const session = new BotTrainingSession(
       BUILT_IN_BOT_KNOWLEDGE,
       (observations) => { persisted.push(observations); },
+      TEST_RANDOM,
     );
     const before = frameFor(session, 0, 0, 0);
     const after = frameFor(session, 300, -1, -5);
@@ -56,7 +59,7 @@ describe('bot training session', () => {
     const session = new BotTrainingSession(BUILT_IN_BOT_KNOWLEDGE, async () => {
       await persistence;
       persisted = true;
-    });
+    }, TEST_RANDOM);
 
     session.commandsForTick(0, NEUTRAL_COMMAND, frameFor(session, 0, 0, 0));
     session.commandsForTick(300, NEUTRAL_COMMAND, frameFor(session, 300, -1, -5));
@@ -70,7 +73,7 @@ describe('bot training session', () => {
   });
 
   it('rewards a maximum-speed opponent demolition and penalizes the victim', () => {
-    const session = new BotTrainingSession();
+    const session = new BotTrainingSession(BUILT_IN_BOT_KNOWLEDGE, undefined, TEST_RANDOM);
     const before = frameFor(session, 0, 0, 0);
     const baseAfter = frameFor(session, 1, 0, 0);
     const after: AuthoritativeFrame = {
@@ -95,6 +98,19 @@ describe('bot training session', () => {
 
     expect(attacker?.points).toBeGreaterThan(7);
     expect(victim?.points).toBeLessThan(0);
+  });
+
+  it('penalizes an aerial attempt that lands without touching the ball', () => {
+    const session = new BotTrainingSession(BUILT_IN_BOT_KNOWLEDGE, undefined, TEST_RANDOM);
+    const launch = withBallHeight(frameFor(session, 0, 0, 0), 6);
+    const landed = withBallHeight(frameFor(session, 0, 0, 0), 6);
+
+    const command = session.commandsForTick(0, NEUTRAL_COMMAND, launch).get('bot-azure-0');
+    session.commandsForTick(20, NEUTRAL_COMMAND, landed);
+    const bot = session.trainingState().entries.find(({ playerId }) => playerId === 'bot-azure-0');
+
+    expect(command?.jumpPressed).toBe(true);
+    expect(bot?.points).toBeLessThan(-3);
   });
 });
 
@@ -148,4 +164,18 @@ const carState = (position: CarState['transform']['position']): CarState => ({
   grounded: true,
   boost: 100,
   boosting: false,
+});
+
+const withBallHeight = (frame: AuthoritativeFrame, y: number): AuthoritativeFrame => ({
+  ...frame,
+  snapshot: {
+    ...frame.snapshot,
+    ball: {
+      ...frame.snapshot.ball,
+      transform: {
+        ...frame.snapshot.ball.transform,
+        position: { ...frame.snapshot.ball.transform.position, y },
+      },
+    },
+  },
 });

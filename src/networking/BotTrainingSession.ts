@@ -22,13 +22,22 @@ const AERIAL_BALL_HEIGHT = BALL_TUNING.radius + 1.25;
 const SUPPORT_MINIMUM_DISTANCE = 8;
 const SUPPORT_MAXIMUM_DISTANCE = 24;
 const KICKOFF_REWARD_TICKS = 60 * 12;
+const GROUND_ATTEMPT_TIMEOUT_TICKS = 60;
+const AERIAL_ATTEMPT_TIMEOUT_TICKS = 120;
+
+interface ContactAttempt {
+  readonly startedTick: number;
+  readonly aerial: boolean;
+}
 
 export class BotTrainingSession implements GameSession {
-  readonly players = createBotTrainingRoster();
-  readonly localPlayerId = this.players[0]?.id ?? 'bot-azure-0';
+  readonly players: readonly LobbyPlayer[];
+  readonly localPlayerId: string;
   readonly authoritative = true;
   private readonly bots: ReadonlyMap<string, BotController>;
   private readonly lastRewards = new Map<string, number>();
+  private readonly contactAttempts = new Map<string, ContactAttempt>();
+  private previousCommands: ReadonlyMap<string, PlayerCommand> = new Map();
   private previousFrame: AuthoritativeFrame | null = null;
   private lastTouchPlayerId: string | null = null;
   private lastTouchWasAerial = false;
@@ -40,7 +49,10 @@ export class BotTrainingSession implements GameSession {
   constructor(
     private readonly knowledge: BotKnowledge = BUILT_IN_BOT_KNOWLEDGE,
     private readonly onKnowledge?: (observations: BotKnowledgeObservations) => unknown,
+    random: () => number = Math.random,
   ) {
+    this.players = createBotTrainingRoster(random);
+    this.localPlayerId = this.players[0]?.id ?? 'bot-azure-0';
     this.bots = new Map(this.players.map((player) => [
       player.id,
       new BotController(
@@ -71,6 +83,8 @@ export class BotTrainingSession implements GameSession {
         ? { ...command, togglePause: localCommand.togglePause }
         : command);
     });
+    if (observedFrame) this.trackContactAttempts(observedFrame, commands, tick);
+    this.previousCommands = commands;
     return commands;
   }
 
@@ -155,12 +169,15 @@ export class BotTrainingSession implements GameSession {
         this.rewardPositioning(frame, rewards);
         this.rewardAerialPlay(previous, frame, rewards);
         this.penalizeRecoveryDowntime(frame, rewards);
+        this.penalizeReverseDriving(frame, rewards);
         this.rewardTouch(previous, frame, rewards);
+        this.resolveMissedContactAttempts(frame, tick, rewards);
       }
     }
     if (frame.snapshot.match.phase === 'countdown') {
       this.lastTouchPlayerId = null;
       this.lastTouchWasAerial = false;
+      this.contactAttempts.clear();
     }
     if (frame.snapshot.match.phase === 'ended') {
       this.lastRewards.clear();
@@ -285,6 +302,14 @@ export class BotTrainingSession implements GameSession {
     });
   }
 
+  private penalizeReverseDriving(frame: AuthoritativeFrame, rewards: Map<string, number>): void {
+    this.previousCommands.forEach((command, playerId) => {
+      const car = frame.cars[playerId];
+      if (!car?.grounded || command.throttle >= -0.05) return;
+      addReward(rewards, playerId, -0.012 * Math.abs(command.throttle));
+    });
+  }
+
   private rewardAerialPlay(
     previous: AuthoritativeFrame,
     current: AuthoritativeFrame,
@@ -317,6 +342,7 @@ export class BotTrainingSession implements GameSession {
     if (!toucher || toucher.distance > TOUCH_DISTANCE) return;
     this.lastTouchPlayerId = toucher.id;
     const toucherCar = current.cars[toucher.id];
+    this.contactAttempts.delete(toucher.id);
     this.lastTouchWasAerial = Boolean(
       toucherCar
       && !toucherCar.grounded
@@ -334,6 +360,41 @@ export class BotTrainingSession implements GameSession {
       addReward(rewards, toucher.id, botRole(toucher) === 'defender' ? 12 : 7);
     }
     if (this.lastTouchWasAerial) addReward(rewards, toucher.id, improvement > 0 ? 12 : -8);
+  }
+
+  private trackContactAttempts(
+    frame: AuthoritativeFrame,
+    commands: ReadonlyMap<string, PlayerCommand>,
+    tick: number,
+  ): void {
+    commands.forEach((command, playerId) => {
+      if (!command.jumpPressed || this.contactAttempts.has(playerId)) return;
+      const car = frame.cars[playerId];
+      if (!car?.grounded) return;
+      const up = rotateVector(car.transform.rotation, { x: 0, y: 1, z: 0 });
+      const ballDistance = distance(car.transform.position, frame.snapshot.ball.transform.position);
+      if (up.y <= 0.55 || ballDistance > 30) return;
+      this.contactAttempts.set(playerId, {
+        startedTick: tick,
+        aerial: frame.snapshot.ball.transform.position.y >= AERIAL_BALL_HEIGHT,
+      });
+    });
+  }
+
+  private resolveMissedContactAttempts(
+    frame: AuthoritativeFrame,
+    tick: number,
+    rewards: Map<string, number>,
+  ): void {
+    this.contactAttempts.forEach((attempt, playerId) => {
+      const car = frame.cars[playerId];
+      const age = tick - attempt.startedTick;
+      const timeout = attempt.aerial ? AERIAL_ATTEMPT_TIMEOUT_TICKS : GROUND_ATTEMPT_TIMEOUT_TICKS;
+      const landedWithoutContact = age > 12 && car?.grounded;
+      if (!landedWithoutContact && age < timeout) return;
+      addReward(rewards, playerId, attempt.aerial ? -4 : -1.5);
+      this.contactAttempts.delete(playerId);
+    });
   }
 }
 

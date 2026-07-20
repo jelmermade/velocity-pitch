@@ -63,13 +63,19 @@ describe('five-minute bot match evaluation', () => {
       expect(Number.isFinite(matchReport.averageNearestTeammateDistance)).toBe(true);
       expect(Number.isFinite(matchReport.jumpsPerBotMinute)).toBe(true);
       expect(Number.isFinite(matchReport.recoveryDowntimePerBotSeconds)).toBe(true);
+      expect(Number.isFinite(matchReport.reverseBotSeconds)).toBe(true);
+      expect(Number.isFinite(matchReport.jumpContactConversionRate)).toBe(true);
+      expect(Number.isFinite(matchReport.powerslideBotSeconds)).toBe(true);
+      expect(Number.isFinite(matchReport.unstableBoostBotSeconds)).toBe(true);
       expect(Number.isFinite(matchReport.netBotReward)).toBe(true);
       expect(matchReport.productiveAerialTouches).toBeLessThanOrEqual(matchReport.aerialTouches);
       expect(matchReport.kickoffGoals).toBeLessThanOrEqual(matchReport.kickoffs);
       expect(matchReport.alignedApproachMisses).toBeLessThanOrEqual(matchReport.alignedApproaches);
       expect(learnedKnowledge.generation).toBe(startingKnowledge.generation + 1);
 
-      const persistedKnowledge = await knowledgeStore.merge(session.knowledgeObservations());
+      const persistedKnowledge = process.env.BOT_EVALUATION_PERSIST_KNOWLEDGE === 'false'
+        ? learnedKnowledge
+        : await knowledgeStore.merge(session.knowledgeObservations());
       const report = {
         ...matchReport,
         knowledge: {
@@ -98,6 +104,11 @@ class EvaluationMetrics {
   private productiveAerialTouches = 0;
   private aerialBoostTicks = 0;
   private boostTicks = 0;
+  private reverseTicks = 0;
+  private powerslideTicks = 0;
+  private unstableBoostTicks = 0;
+  private failedContactJumps = 0;
+  private successfulContactJumps = 0;
   private sideStuckTicks = 0;
   private flippedStuckTicks = 0;
   private ballTravel = 0;
@@ -110,6 +121,7 @@ class EvaluationMetrics {
   private alignedApproachMisses = 0;
   private readonly activeApproaches = new Set<string>();
   private readonly touchedApproaches = new Set<string>();
+  private readonly contactJumps = new Map<string, { readonly tick: number; readonly aerial: boolean }>();
 
   constructor(private readonly session: BotTrainingSession) {}
 
@@ -124,6 +136,7 @@ class EvaluationMetrics {
       }
     }
     if (!isActive(frame)) {
+      this.contactJumps.clear();
       this.previous = frame;
       return;
     }
@@ -134,6 +147,16 @@ class EvaluationMetrics {
       if (command.boost) this.boostTicks += 1;
       const car = frame.cars[playerId];
       if (!car) return;
+      if (command.throttle < -0.05 && car.grounded) this.reverseTicks += 1;
+      if (command.powerslide && car.grounded) this.powerslideTicks += 1;
+      const carRight = rotateVector(car.transform.rotation, { x: 1, y: 0, z: 0 });
+      const horizontalRightLength = Math.max(0.0001, Math.hypot(carRight.x, carRight.z));
+      const lateralSpeed = (
+        car.linearVelocity.x * carRight.x + car.linearVelocity.z * carRight.z
+      ) / horizontalRightLength;
+      if (car.grounded && command.boost && (Math.abs(command.steer) >= 0.18 || Math.abs(lateralSpeed) >= 2.5)) {
+        this.unstableBoostTicks += 1;
+      }
       const up = rotateVector(car.transform.rotation, { x: 0, y: 1, z: 0 });
       if (
         command.jumpPressed
@@ -153,6 +176,9 @@ class EvaluationMetrics {
         frame.snapshot.ball.transform.position,
       );
       const toucherId = this.observeTouch(this.previous, frame);
+      if (toucherId && this.contactJumps.delete(toucherId)) this.successfulContactJumps += 1;
+      this.resolveContactJumps(frame);
+      this.trackContactJumps(frame, commands);
       this.observeAlignedApproaches(frame, toucherId);
     }
     this.previous = frame;
@@ -194,6 +220,13 @@ class EvaluationMetrics {
       productiveAerialAttemptRate: round(this.productiveAerialTouches / Math.max(1, this.aerialAttempts)),
       aerialBoostBotSeconds: round(this.aerialBoostTicks * STEP_SECONDS),
       boostBotSeconds: round(this.boostTicks * STEP_SECONDS),
+      reverseBotSeconds: round(this.reverseTicks * STEP_SECONDS),
+      powerslideBotSeconds: round(this.powerslideTicks * STEP_SECONDS),
+      unstableBoostBotSeconds: round(this.unstableBoostTicks * STEP_SECONDS),
+      failedContactJumpActions: this.failedContactJumps,
+      jumpContactConversionRate: round(
+        this.successfulContactJumps / Math.max(1, this.successfulContactJumps + this.failedContactJumps),
+      ),
       sideStuckBotSeconds: round(this.sideStuckTicks * STEP_SECONDS),
       flippedStuckBotSeconds: round(this.flippedStuckTicks * STEP_SECONDS),
       recoveryDowntimePerBotSeconds: round(recoveryDowntimeSeconds / botCount),
@@ -222,6 +255,34 @@ class EvaluationMetrics {
       if (!resting) return;
       if (up.y < -0.35) this.flippedStuckTicks += 1;
       else if (up.y < 0.45) this.sideStuckTicks += 1;
+    });
+  }
+
+  private trackContactJumps(
+    frame: AuthoritativeFrame,
+    commands: ReadonlyMap<string, PlayerCommand>,
+  ): void {
+    commands.forEach((command, playerId) => {
+      if (!command.jumpPressed || this.contactJumps.has(playerId)) return;
+      const car = frame.cars[playerId];
+      if (!car?.grounded || distance(car.transform.position, frame.snapshot.ball.transform.position) > 30) return;
+      const up = rotateVector(car.transform.rotation, { x: 0, y: 1, z: 0 });
+      if (up.y <= 0.55) return;
+      this.contactJumps.set(playerId, {
+        tick: frame.snapshot.tick,
+        aerial: frame.snapshot.ball.transform.position.y > AERIAL_BALL_HEIGHT,
+      });
+    });
+  }
+
+  private resolveContactJumps(frame: AuthoritativeFrame): void {
+    this.contactJumps.forEach((attempt, playerId) => {
+      const car = frame.cars[playerId];
+      const age = frame.snapshot.tick - attempt.tick;
+      const timeout = attempt.aerial ? 120 : 60;
+      if (age < timeout && !(age > 12 && car?.grounded)) return;
+      this.failedContactJumps += 1;
+      this.contactJumps.delete(playerId);
     });
   }
 

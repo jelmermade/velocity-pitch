@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createBotTrainingRoster, fillBotSlots } from '../../src/gameplay/bots/BotRoster';
+import { botRole, createBotTrainingRoster, fillBotSlots } from '../../src/gameplay/bots/BotRoster';
 import type { LobbyPlayer } from '../../src/networking/LobbyProtocol';
 
 const host: LobbyPlayer = { id: 'host', name: 'Host', team: 'azure', host: true };
@@ -33,5 +33,20 @@ describe('bot-filled rosters', () => {
     expect(roster.filter(({ team }) => team === 'azure')).toHaveLength(3);
     expect(roster.filter(({ team }) => team === 'coral')).toHaveLength(3);
     expect(new Set(roster.map(({ id }) => id)).size).toBe(6);
+  });
+
+  it('randomizes bot teams while preserving two strikers and one defender per side', () => {
+    const originalOrder = createBotTrainingRoster(() => 0.999999);
+    const shuffled = createBotTrainingRoster(() => 0);
+
+    for (const roster of [originalOrder, shuffled]) {
+      for (const team of ['azure', 'coral'] as const) {
+        const teamPlayers = roster.filter((player) => player.team === team);
+        expect(teamPlayers.filter((player) => botRole(player) === 'striker')).toHaveLength(2);
+        expect(teamPlayers.filter((player) => botRole(player) === 'defender')).toHaveLength(1);
+      }
+    }
+    expect(shuffled.map(({ id, team }) => `${id}:${team}`))
+      .not.toEqual(originalOrder.map(({ id, team }) => `${id}:${team}`));
   });
 });

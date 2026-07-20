@@ -22,10 +22,7 @@ export class BotKnowledgeFileStore {
 
   async load(): Promise<BotKnowledge> {
     try {
-      const stored = normalizeBotKnowledge(JSON.parse(await readFile(this.path, 'utf8')) as unknown);
-      return stored.generation >= BUILT_IN_BOT_KNOWLEDGE.generation
-        ? stored
-        : BUILT_IN_BOT_KNOWLEDGE;
+      return normalizeBotKnowledge(JSON.parse(await readFile(this.path, 'utf8')) as unknown);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) {
         return BUILT_IN_BOT_KNOWLEDGE;

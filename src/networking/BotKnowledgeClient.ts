@@ -18,10 +18,7 @@ export const loadSharedBotKnowledge = async (
   try {
     const response = await request(url, { headers: { Accept: 'application/json' } });
     if (!response.ok) return BUILT_IN_BOT_KNOWLEDGE;
-    const shared = normalizeBotKnowledge(await response.json());
-    return shared.generation >= BUILT_IN_BOT_KNOWLEDGE.generation
-      ? shared
-      : BUILT_IN_BOT_KNOWLEDGE;
+    return normalizeBotKnowledge(await response.json());
   } catch {
     return BUILT_IN_BOT_KNOWLEDGE;
   }

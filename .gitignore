@@ -2,7 +2,7 @@ node_modules/
 dist/
 coverage/
 *.log
-data/bot-evaluation-*.json
+data/**/bot-evaluation-*.json
 .DS_Store
 *.idea
 .env

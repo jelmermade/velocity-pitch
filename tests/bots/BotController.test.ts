@@ -26,11 +26,21 @@ describe('bot controller', () => {
     expect(bot.command(frame, 0).steer).toBeGreaterThan(0.5);
   });
 
-  it('jumps once near the ball and holds jump for several ticks', () => {
+  it('does not jump into a routine rolling-ball contact', () => {
     const bot = new BotController('bot', 'azure', 'striker');
     const frame = createFrame(
       createCar({ x: 0, y: 0.72, z: 3 }, { x: 0, y: 0, z: 0, w: 1 }),
       { x: 0, y: 2.1, z: 0 },
+    );
+
+    expect(bot.command(frame, 10)).toMatchObject({ jumpPressed: false, jumpHeld: false });
+  });
+
+  it('jumps once when an elevated ball requires it and holds jump for several ticks', () => {
+    const bot = new BotController('bot', 'azure', 'striker');
+    const frame = createFrame(
+      createCar({ x: 0, y: 0.72, z: 3 }, { x: 0, y: 0, z: 0, w: 1 }),
+      { x: 0, y: 3.5, z: 0 },
     );
 
     expect(bot.command(frame, 10)).toMatchObject({ jumpPressed: true, jumpHeld: true });
@@ -89,7 +99,7 @@ describe('bot controller', () => {
     expect(bot.command(teammateCloser, 21).throttle).toBe(1);
   });
 
-  it('slows down and powerslides to correct a close offset shot', () => {
+  it('slows down without powersliding or boosting through a close offset shot', () => {
     const bot = new BotController('bot', 'azure', 'striker');
     const frame = createFrame(
       createCar(
@@ -100,7 +110,91 @@ describe('bot controller', () => {
       { x: 0, y: 1.35, z: 0 },
     );
 
-    expect(bot.command(frame, 0)).toMatchObject({ throttle: 0.35, powerslide: true });
+    expect(bot.command(frame, 0)).toMatchObject({
+      throttle: 0.35,
+      powerslide: false,
+      boost: false,
+    });
+  });
+
+  it('does not boost while steering substantially toward the ball', () => {
+    const bot = new BotController('bot', 'azure', 'striker');
+    const frame = createFrame(
+      createCar(
+        { x: 0, y: 0.72, z: 25 },
+        { x: 0, y: 0, z: 0, w: 1 },
+        { linearVelocity: { x: 0, y: 0, z: -8 } },
+      ),
+      { x: 12, y: 1.35, z: 0 },
+    );
+
+    expect(Math.abs(bot.command(frame, 0).steer)).toBeGreaterThan(0.5);
+    expect(bot.command(frame, 0).boost).toBe(false);
+  });
+
+  it('does not boost until lateral sliding is under control', () => {
+    const bot = new BotController('bot', 'azure', 'striker');
+    const frame = createFrame(
+      createCar(
+        { x: 0, y: 0.72, z: 25 },
+        { x: 0, y: 0, z: 0, w: 1 },
+        { linearVelocity: { x: 8, y: 0, z: -8 } },
+      ),
+      { x: 0, y: 1.35, z: 0 },
+    );
+
+    expect(bot.command(frame, 0)).toMatchObject({ steer: 0, boost: false });
+  });
+
+  it('prefers natural steering when its normal turn radius can reach the ball', () => {
+    const bot = new BotController('bot', 'azure', 'striker');
+    const frame = createFrame(
+      createCar(
+        { x: 0, y: 0.72, z: 25 },
+        { x: 0, y: 0, z: 0, w: 1 },
+        { linearVelocity: { x: 0, y: 0, z: -22 } },
+      ),
+      { x: 12, y: 1.35, z: 0 },
+    );
+
+    expect(bot.command(frame, 0).powerslide).toBe(false);
+    expect(bot.command(frame, 30).powerslide).toBe(false);
+  });
+
+  it('powerslides only after natural steering cannot make a tight ball approach', () => {
+    const bot = new BotController('bot', 'azure', 'striker');
+    const frame = createFrame(
+      createCar(
+        { x: 0, y: 0.72, z: 25 },
+        { x: 0, y: 0, z: 0, w: 1 },
+        { linearVelocity: { x: 0, y: 0, z: -22 } },
+      ),
+      { x: 10, y: 1.35, z: 15 },
+    );
+
+    expect(bot.command(frame, 0)).toMatchObject({ throttle: 0.55, powerslide: false });
+    expect(bot.command(frame, 23).powerslide).toBe(false);
+    expect(bot.command(frame, 24)).toMatchObject({ throttle: 0.35, powerslide: true });
+  });
+
+  it('tries natural steering before powersliding through a fast distant U-turn', () => {
+    const bot = new BotController('bot', 'azure', 'striker');
+    const frame = createFrame(
+      createCar(
+        { x: 0, y: 0.72, z: 25 },
+        { x: 0, y: 1, z: 0, w: 0 },
+        { linearVelocity: { x: 0, y: 0, z: 15 } },
+      ),
+      { x: 12, y: 1.35, z: 0 },
+    );
+
+    expect(bot.command(frame, 0)).toMatchObject({ boost: false, throttle: 0.55, powerslide: false });
+    expect(bot.command(frame, 23).powerslide).toBe(false);
+    expect(bot.command(frame, 24)).toMatchObject({ throttle: 0.35, powerslide: true });
+    expect(bot.command(frame, 30).powerslide).toBe(true);
+    expect(bot.command(frame, 31).powerslide).toBe(false);
+    expect(bot.command(frame, 143).powerslide).toBe(false);
+    expect(bot.command(frame, 144).powerslide).toBe(true);
   });
 
   it('changes its kickoff contact lane after the next countdown', () => {
@@ -133,21 +227,48 @@ describe('bot controller', () => {
     );
 
     expect(bot.command(launchFrame, 0)).toMatchObject({ jumpPressed: true, jumpHeld: true, boost: false });
+    expect(bot.command(launchFrame, 1).boost).toBe(false);
     expect(bot.command(flightFrame, 1)).toMatchObject({ jumpPressed: false, boost: true });
-    expect(bot.command(flightFrame, 10)).toMatchObject({ jumpPressed: true, boost: false });
+    expect(bot.command(flightFrame, 8)).toMatchObject({ jumpPressed: true, boost: false });
+  });
+
+  it('rejects an aerial when the ball is falling too quickly to intercept', () => {
+    const bot = new BotController('bot', 'azure', 'striker');
+    const base = createFrame(
+      createCar({ x: 0, y: 0.72, z: 6 }, { x: 0, y: 0, z: 0, w: 1 }),
+      { x: 0, y: 8, z: 0 },
+    );
+    const frame = withBallVelocity(base, { x: 0, y: -10, z: 0 });
+
+    expect(bot.command(frame, 0).jumpPressed).toBe(false);
+  });
+
+  it('levels an airborne car instead of applying ground throttle as pitch-down input', () => {
+    const bot = new BotController('bot', 'azure', 'striker');
+    const frame = createFrame(
+      createCar(
+        { x: 0, y: 5, z: 20 },
+        { x: 0, y: 0, z: 0, w: 1 },
+        { grounded: false, linearVelocity: { x: 0, y: -2, z: 0 } },
+      ),
+      { x: 0, y: 1.35, z: 0 },
+    );
+
+    expect(bot.command(frame, 0)).toMatchObject({ throttle: 0, boost: false });
   });
 
   it.each([
     ['azure', { x: 0, y: 0, z: 0, w: 1 }, 18, 20],
     ['coral', { x: 0, y: 1, z: 0, w: 0 }, -18, -20],
-  ] as const)('stages behind the ball to shoot at the opposing goal for %s', (team, rotation, carZ, ballZ) => {
+  ] as const)('turns forward to stage behind the ball for %s', (team, rotation, carZ, ballZ) => {
     const bot = new BotController('bot', team, 'striker');
     const frame = createFrame(
       createCar({ x: 6, y: 0.72, z: carZ }, rotation),
       { x: 0, y: 1.35, z: ballZ },
     );
 
-    expect(bot.command(frame, 0).throttle).toBe(-0.7);
+    expect(bot.command(frame, 0)).toMatchObject({ throttle: 1, boost: false });
+    expect(Math.abs(bot.command(frame, 0).steer)).toBe(1);
   });
 
   it.each([
@@ -186,7 +307,7 @@ describe('bot controller', () => {
       { x: 4, y: 1.35, z: ballZ },
     );
 
-    expect(bot.command(frame, 0).throttle).toBe(-0.7);
+    expect(bot.command(frame, 0).throttle).toBe(1);
   });
 
   it.each([
@@ -199,7 +320,7 @@ describe('bot controller', () => {
     const defender = new BotController('bot', team, 'defender').command(frame, 0);
 
     expect(striker.throttle).toBe(1);
-    expect(defender).toMatchObject({ throttle: -0.7, boost: false });
+    expect(defender).toMatchObject({ throttle: 1, boost: false });
   });
 
   it.each([
@@ -263,9 +384,9 @@ describe('bot controller', () => {
     );
 
     expect(bot.command(frame, 0).jumpPressed).toBe(false);
-    expect(bot.command(frame, 44).jumpPressed).toBe(false);
-    expect(bot.command(frame, 45)).toMatchObject({ jumpPressed: true, jumpHeld: true });
-    expect(bot.command(frame, 46)).toMatchObject({ jumpPressed: false, jumpHeld: true });
+    expect(bot.command(frame, 74).jumpPressed).toBe(false);
+    expect(bot.command(frame, 75)).toMatchObject({ jumpPressed: true, jumpHeld: true });
+    expect(bot.command(frame, 76)).toMatchObject({ jumpPressed: false, jumpHeld: true });
   });
 
   it('tracks net performance so negative feedback affects the visible score', () => {
@@ -351,5 +472,16 @@ const withMatchPhase = (
   snapshot: {
     ...frame.snapshot,
     match: { ...frame.snapshot.match, phase },
+  },
+});
+
+const withBallVelocity = (
+  frame: AuthoritativeFrame,
+  linearVelocity: AuthoritativeFrame['snapshot']['ball']['linearVelocity'],
+): AuthoritativeFrame => ({
+  ...frame,
+  snapshot: {
+    ...frame.snapshot,
+    ball: { ...frame.snapshot.ball, linearVelocity },
   },
 });

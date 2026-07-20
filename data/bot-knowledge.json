@@ -1,34 +1,34 @@
 {
   "schemaVersion": 1,
-  "generation": 36,
-  "updatedAt": "2026-07-14T14:37:45.916Z",
+  "generation": 0,
+  "updatedAt": "2026-07-20T07:38:11.000Z",
   "roles": {
     "striker": {
       "balanced": {
-        "value": 0.003704,
-        "samples": 2828
+        "value": 0,
+        "samples": 0
       },
       "press": {
-        "value": 0.0094,
-        "samples": 2854
+        "value": 0,
+        "samples": 0
       },
       "rotate": {
-        "value": 0.003025,
-        "samples": 2636
+        "value": 0,
+        "samples": 0
       }
     },
     "defender": {
       "balanced": {
-        "value": 0.003586,
-        "samples": 1713
+        "value": 0,
+        "samples": 0
       },
       "press": {
-        "value": 0.005058,
-        "samples": 1630
+        "value": 0,
+        "samples": 0
       },
       "rotate": {
-        "value": 0.002649,
-        "samples": 1731
+        "value": 0,
+        "samples": 0
       }
     }
   }
