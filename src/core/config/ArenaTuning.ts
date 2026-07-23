@@ -20,6 +20,6 @@ export const ARENA_TUNING = Object.freeze({
   cornerChamferLength: scaled(10),
   cornerFilletRadius: scaled(1.75),
   cornerFilletSegments: 5,
-  floorWallCurveRadius: scaled(2.4),
+  floorWallCurveRadius: scaled(3.5),
   floorWallCurveSegments: Math.max(32, Math.ceil(32 * scale)),
 });

@@ -115,7 +115,7 @@ describe('competitive arena geometry', () => {
   });
 
   it('keeps the lower wall fillet small and independent from horizontal corners', () => {
-    expect(ARENA_TUNING.floorWallCurveRadius / ARENA_TUNING.halfWidth).toBeCloseTo(0.05, 4);
+    expect(ARENA_TUNING.floorWallCurveRadius / ARENA_TUNING.halfWidth).toBeCloseTo(3.5 / 48, 4);
     expect(ARENA_TUNING.cornerFilletRadius).toBeLessThan(ARENA_TUNING.floorWallCurveRadius);
     expect(ARENA_TUNING.cornerFilletRadius).toBeLessThan(ARENA_TUNING.cornerChamferLength * 0.2);
   });

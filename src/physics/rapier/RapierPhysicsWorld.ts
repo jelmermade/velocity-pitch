@@ -7,6 +7,8 @@ import type { BodyOptions, CoefficientCombineRule, ColliderOptions, RayHit } fro
 import { RapierBody } from './RapierBody';
 
 export class RapierPhysicsWorld implements PhysicsWorld {
+  private disposed = false;
+
   private constructor(private readonly world: RAPIER.World) {}
 
   static async create(): Promise<RapierPhysicsWorld> {
@@ -97,7 +99,21 @@ export class RapierPhysicsWorld implements PhysicsWorld {
   }
 
   dispose(): void {
-    this.world.free();
+    if (this.disposed) return;
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      try {
+        this.world.free();
+        this.disposed = true;
+        return;
+      } catch (error) {
+        if (!isBorrowedRapierValueError(error)) throw error;
+        // World.free releases components in order. A WASM borrowed-value failure can
+        // clear one raw pointer before the TS wrapper clears its `raw` property. Skip
+        // every such partially released component and let the next pass continue.
+        clearReleasedRapierHandles(this.world);
+      }
+    }
+    throw new Error('Rapier world teardown did not converge');
   }
 
   private createColliderDescriptor(options: ColliderOptions): RAPIER.ColliderDesc {
@@ -121,6 +137,13 @@ export class RapierPhysicsWorld implements PhysicsWorld {
         descriptor = hull;
         break;
       }
+      case 'trimesh':
+        descriptor = RAPIER.ColliderDesc.trimesh(
+          new Float32Array(options.shape.vertices.flatMap(({ x, y, z }) => [x, y, z])),
+          new Uint32Array(options.shape.indices),
+          RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES,
+        );
+        break;
       case 'ball':
         descriptor = RAPIER.ColliderDesc.ball(options.shape.radius);
         break;
@@ -149,4 +172,15 @@ const toRapierCombineRule = (rule: CoefficientCombineRule): RAPIER.CoefficientCo
     case 'multiply': return RAPIER.CoefficientCombineRule.Multiply;
     case 'max': return RAPIER.CoefficientCombineRule.Max;
   }
+};
+
+const isBorrowedRapierValueError = (error: unknown): boolean => error instanceof Error
+  && error.message === 'attempted to take ownership of Rust value while it was borrowed';
+
+const clearReleasedRapierHandles = (world: RAPIER.World): void => {
+  Object.values(world).forEach((component: unknown) => {
+    if (typeof component !== 'object' || component === null) return;
+    const raw = Reflect.get(component, 'raw') as { readonly __wbg_ptr?: unknown } | undefined;
+    if (raw && raw.__wbg_ptr === 0) Reflect.set(component, 'raw', undefined);
+  });
 };

@@ -44,4 +44,23 @@ describe('bot knowledge', () => {
     expect(observations.striker.press).toEqual({ totalValue: -25, samples: 25 });
     expect(observations.defender.rotate).toEqual({ totalValue: 0, samples: 0 });
   });
+
+  it('migrates v1 knowledge and learns contact techniques independently', () => {
+    const current = normalizeBotKnowledge({
+      schemaVersion: 1,
+      generation: 202,
+      roles: {
+        striker: { balanced: { value: 0.2, samples: 20 } },
+      },
+    });
+    const observations = createEmptyBotKnowledgeObservations();
+    observations.techniques.aerial.safe = { totalValue: 2.4, samples: 3 };
+
+    const learned = mergeBotKnowledge(current, observations, '2026-07-22T00:00:00.000Z');
+
+    expect(current.schemaVersion).toBe(2);
+    expect(current.roles.striker.balanced).toEqual({ value: 0.2, samples: 20 });
+    expect(learned.techniques.aerial.safe).toEqual({ value: 0.8, samples: 3 });
+    expect(learned.techniques.ground.balanced).toEqual({ value: 0, samples: 0 });
+  });
 });

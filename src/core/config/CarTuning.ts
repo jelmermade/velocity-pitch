@@ -11,11 +11,15 @@ export interface CarTuning {
   readonly surfaceAdhesionSpeedForce: number;
   readonly surfaceMinimumAdhesionFactor: number;
   readonly surfaceGravityCompensation: number;
+  readonly surfaceAlignmentRate: number;
+  readonly surfaceSteeringAlignmentRate: number;
+  readonly surfaceAngularDamping: number;
   readonly surfaceAlignmentTorque: number;
   readonly surfaceHeadingTorque: number;
   readonly surfaceHeadingDamping: number;
   readonly surfaceAdhesionGraceSeconds: number;
   readonly surfaceContactProbeExtension: number;
+  readonly surfaceJumpDetachSeconds: number;
   readonly engineForce: number;
   readonly reverseForce: number;
   readonly maximumGroundDriveSpeed: number;
@@ -72,9 +76,9 @@ export interface CarTuning {
 export const carTuningForVehicleConfig = (vehicle: VehicleConfig): CarTuning => ({
   mass: 850,
   halfExtents: { x: 0.92, y: 0.42, z: 1.38 },
-  colliderBorderRadius: 0.12,
+  colliderBorderRadius: 0.08,
   colliderPoints: [
-    // The physical wheels support the car; the chassis stays clear of curved surfaces.
+    // Rounded supports carry the car; the chassis stays clear of curved surfaces.
     { x: -0.58, y: -0.14, z: -1.02 }, { x: 0.58, y: -0.14, z: -1.02 },
     { x: -0.58, y: -0.14, z: 1.02 }, { x: 0.58, y: -0.14, z: 1.02 },
     { x: -0.92, y: -0.1, z: -1.2 }, { x: 0.92, y: -0.1, z: -1.2 },
@@ -87,14 +91,18 @@ export const carTuningForVehicleConfig = (vehicle: VehicleConfig): CarTuning => 
   wheelRadius: 0.34,
   wheelContactTolerance: 0.12,
   surfaceAdhesionForce: 12_000,
-  surfaceAdhesionSpeedForce: 260,
+  surfaceAdhesionSpeedForce: 320,
   surfaceMinimumAdhesionFactor: 0.65,
-  surfaceGravityCompensation: 0.72,
+  surfaceGravityCompensation: 1,
+  surfaceAlignmentRate: 30,
+  surfaceSteeringAlignmentRate: 20,
+  surfaceAngularDamping: 35,
   surfaceAlignmentTorque: 200_000,
   surfaceHeadingTorque: 75_000,
   surfaceHeadingDamping: 20_000,
   surfaceAdhesionGraceSeconds: 0.3,
   surfaceContactProbeExtension: 0.9,
+  surfaceJumpDetachSeconds: 0.18,
   engineForce: 9_500 * vehicle.accelerationMultiplier,
   reverseForce: 6_500 * vehicle.reverseAccelerationMultiplier,
   maximumGroundDriveSpeed: vehicle.driveTopSpeed,

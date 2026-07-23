@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generation": 0,
   "updatedAt": "2026-07-20T07:38:11.000Z",
   "roles": {
@@ -30,6 +30,18 @@
         "value": 0,
         "samples": 0
       }
+    }
+  },
+  "techniques": {
+    "ground": {
+      "balanced": { "value": 0, "samples": 0 },
+      "safe": { "value": 0, "samples": 0 },
+      "aggressive": { "value": 0, "samples": 0 }
+    },
+    "aerial": {
+      "balanced": { "value": 0, "samples": 0 },
+      "safe": { "value": 0, "samples": 0 },
+      "aggressive": { "value": 0, "samples": 0 }
     }
   }
 }

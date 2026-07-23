@@ -2,23 +2,41 @@ import type { CarTuning } from '../../core/config/CarTuning';
 import { ARENA_TUNING } from '../../core/config/ArenaTuning';
 import { PHYSICS_TUNING } from '../../core/config/PhysicsTuning';
 import { clamp } from '../../core/math/MathUtils';
-import { add, cross, dot, length, normalize, scale, sub, UP, type Vec3 } from '../../core/math/Vector3';
+import { add, cross, dot, length, normalize, scale, sub, UP, ZERO, type Vec3 } from '../../core/math/Vector3';
 import type { PlayerCommand } from '../../input/PlayerCommand';
 import type { PhysicsBody } from '../../physics/PhysicsBody';
 import type { PhysicsWorld } from '../../physics/PhysicsWorld';
+import type { RayHit } from '../../physics/PhysicsTypes';
+import type { CarSurfaceDebug, SurfaceRayDebug } from './CarState';
 import { WHEEL_BASE, WHEEL_CONNECTIONS, type WheelState } from './WheelState';
 
 export interface WheelContactResult {
   readonly grounded: boolean;
   readonly wheels: readonly WheelState[];
   readonly surfaceNormal: Vec3 | null;
+  readonly projectedForward: Vec3;
+  readonly tangentVelocity: Vec3;
+  readonly debug: CarSurfaceDebug;
 }
+
+interface WheelProbe {
+  readonly connection: Vec3;
+  readonly direction: Vec3;
+  readonly length: number;
+  readonly hit: RayHit | null;
+  readonly steeringAngle: number;
+}
+
+type ContactProbe = WheelProbe & { readonly hit: RayHit };
 
 export class WheelContactSystem {
   private wheelSpin = 0;
   private lastSurfaceNormal: Vec3 = UP;
-  private surfaceHeading: Vec3 = { x: 0, y: 0, z: -1 };
   private adhesionGraceRemaining = 0;
+  private surfaceMomentumSpeed = 0;
+  private surfaceMomentumDirection: Vec3 = ZERO;
+  private surfaceMomentumNormal: Vec3 = UP;
+  private surfaceDetachRemaining = 0;
 
   update(
     world: PhysicsWorld,
@@ -28,86 +46,123 @@ export class WheelContactSystem {
     tuning: CarTuning,
     deltaSeconds: number,
   ): WheelContactResult {
-    const wheels: WheelState[] = [];
     const chassisPosition = body.position();
+    this.surfaceDetachRemaining = Math.max(0, this.surfaceDetachRemaining - deltaSeconds);
+    const detachingFromSurface = this.surfaceDetachRemaining > 0;
     const rotation = body.rotation();
+    const initialVelocity = body.linearVelocity();
+    const provisionalSpeed = dot(initialVelocity, axes.forward);
+    const provisionalYawSpeed = dot(body.angularVelocity(), axes.up);
+    const requestedYawDirection = -Math.sign(command.steer) * Math.sign(provisionalSpeed);
+    const counterSteering = !command.powerslide
+      && Math.abs(command.steer) >= 0.01
+      && Math.abs(provisionalSpeed) > 0.35
+      && provisionalYawSpeed * requestedYawDirection < -0.05;
     const steeringAngle = command.powerslide
       ? command.steer * tuning.maximumSteerAngle * tuning.powerslideSteerMultiplier
       : Math.atan(command.steer * WHEEL_BASE / tuning.groundTurnRadius);
-    const speed = dot(body.linearVelocity(), axes.forward);
-    const yawSpeed = dot(body.angularVelocity(), axes.up);
-    const requestedYawDirection = -Math.sign(command.steer) * Math.sign(speed);
-    const counterSteering = !command.powerslide
-      && Math.abs(command.steer) >= 0.01
-      && Math.abs(speed) > 0.35
-      && yawSpeed * requestedYawDirection < -0.05;
-    this.wheelSpin += speed * deltaSeconds / tuning.wheelRadius;
-    let contactCount = 0;
-    let contactNormalSum: Vec3 = { x: 0, y: 0, z: 0 };
 
-    WHEEL_CONNECTIONS.forEach((localConnection, index) => {
-      const rotatedConnection = this.rotate(rotation, localConnection);
-      const connection = add(chassisPosition, rotatedConnection);
-      let rayDirection = scale(axes.up, -1);
+    const probes = WHEEL_CONNECTIONS.map((localConnection, index): WheelProbe => {
+      const connection = add(chassisPosition, this.rotate(rotation, localConnection));
+      let direction = scale(axes.up, -1);
       let rayLength = tuning.wheelRadius + tuning.wheelContactTolerance;
-      let hit = world.castRay(connection, rayDirection, rayLength, body, true);
-      // Keep sampling a curved wall when chassis rotation briefly outruns the rigid wheel probe.
+      let hit = detachingFromSurface
+        ? null
+        : world.castRay(connection, direction, rayLength, body, true);
       const followingSlope = this.lastSurfaceNormal.y < 0.999_95;
       const nearBoundary = Math.abs(chassisPosition.x) >= (
         ARENA_TUNING.halfWidth - ARENA_TUNING.floorWallCurveRadius - 2
       ) || Math.abs(chassisPosition.z) >= (
         ARENA_TUNING.halfLength - ARENA_TUNING.floorWallCurveRadius - 2
       );
-      const chassisOutranContact = nearBoundary
-        && dot(axes.up, this.lastSurfaceNormal) < 0.999_95;
-      if (!hit && this.adhesionGraceRemaining > 0 && (followingSlope || chassisOutranContact)) {
-        rayDirection = scale(this.lastSurfaceNormal, -1);
+      const chassisOutranContact = nearBoundary && dot(axes.up, this.lastSurfaceNormal) < 0.999_95;
+      if (
+        !detachingFromSurface
+        && !hit
+        && this.adhesionGraceRemaining > 0
+        && (followingSlope || chassisOutranContact)
+      ) {
+        direction = scale(this.lastSurfaceNormal, -1);
         rayLength += tuning.surfaceContactProbeExtension;
-        hit = world.castRay(connection, rayDirection, rayLength, body, true);
+        hit = world.castRay(connection, direction, rayLength, body, true);
       }
-      const isFront = index < 2;
-      const wheelSteer = isFront && !counterSteering ? steeringAngle : 0;
+      return {
+        connection,
+        direction,
+        length: rayLength,
+        hit,
+        steeringAngle: index < 2 && !counterSteering ? steeringAngle : 0,
+      };
+    });
 
-      if (hit) {
-        contactCount += 1;
-        contactNormalSum = add(contactNormalSum, hit.normal);
-        const pointVelocity = body.velocityAtPoint(connection);
-        // Preserve flat-ground steering while following the true contact plane on ramps.
-        const surfaceFollowingBlend = Math.abs(command.steer) < 0.01 || hit.normal.y < 0.999_95 ? 1 : 0;
+    const contacts = probes.filter(
+      (probe): probe is ContactProbe => probe.hit !== null,
+    );
+    const contactCount = contacts.length;
+    const measuredNormal = contactCount > 0
+      ? normalize(contacts.reduce(
+          (sum, probe) => add(sum, probe.hit.normal),
+          ZERO,
+        ))
+      : null;
+    const ceilingContact = measuredNormal !== null && measuredNormal.y < -0.05;
+    const driveableNormal = ceilingContact ? null : measuredNormal;
+    if (driveableNormal) {
+      this.lastSurfaceNormal = driveableNormal;
+      this.adhesionGraceRemaining = tuning.surfaceAdhesionGraceSeconds;
+    } else if (ceilingContact) {
+      this.adhesionGraceRemaining = 0;
+    } else {
+      this.adhesionGraceRemaining = Math.max(0, this.adhesionGraceRemaining - deltaSeconds);
+    }
+
+    const slopeContactGrace = this.adhesionGraceRemaining > 0 && this.lastSurfaceNormal.y < 0.999_95;
+    const grounded = !ceilingContact && (contactCount >= 2 || slopeContactGrace);
+    const surfaceNormal = driveableNormal ?? (slopeContactGrace ? this.lastSurfaceNormal : null);
+    const projectedForward = surfaceNormal
+      ? this.tangentDirection(axes.forward, surfaceNormal, axes.forward)
+      : axes.forward;
+    let tangentVelocity = surfaceNormal
+      ? this.tangentVector(body.linearVelocity(), surfaceNormal)
+      : body.linearVelocity();
+    const surfaceSpeed = dot(body.linearVelocity(), projectedForward);
+    this.wheelSpin += surfaceSpeed * deltaSeconds / tuning.wheelRadius;
+
+    let throttleForce = ZERO;
+    const wheels = probes.map((probe): WheelState => {
+      const hit = probe.hit;
+      if (hit && driveableNormal) {
+        const pointVelocity = body.velocityAtPoint(probe.connection);
         const steeredForward = normalize(add(
-          scale(axes.forward, Math.cos(wheelSteer)),
-          scale(axes.right, Math.sin(wheelSteer)),
+          scale(axes.forward, Math.cos(probe.steeringAngle)),
+          scale(axes.right, Math.sin(probe.steeringAngle)),
         ));
-        const wheelSurfaceForward = normalize(sub(
-          steeredForward,
-          scale(hit.normal, dot(steeredForward, hit.normal)),
-        ));
-        const wheelForward = normalize(add(
-          scale(steeredForward, 1 - surfaceFollowingBlend),
-          scale(wheelSurfaceForward, surfaceFollowingBlend),
-        ));
-        // Steering changes tire grip and yaw; it must not turn engine thrust into sideways force.
-        const driveForward = normalize(sub(
-          axes.forward,
-          scale(hit.normal, dot(axes.forward, hit.normal)),
-        ));
-        const wheelRight = normalize(cross(wheelForward, hit.normal));
+        const wheelForward = this.tangentDirection(steeredForward, driveableNormal, projectedForward);
+        const driveForward = projectedForward;
+        const wheelRight = normalize(cross(wheelForward, driveableNormal));
         const lateralSpeed = dot(pointVelocity, wheelRight);
         const grip = command.powerslide ? tuning.powerslideGrip : tuning.lateralGrip;
-        const maximumLateralForce = command.powerslide ? tuning.maximumPowerslideForce : tuning.maximumLateralForce;
+        const maximumLateralForce = command.powerslide
+          ? tuning.maximumPowerslideForce
+          : tuning.maximumLateralForce;
         const lateralForce = clamp(-lateralSpeed * grip, -maximumLateralForce, maximumLateralForce);
-        const surfaceControllerOwnsGrip = !command.powerslide && hit.normal.y < 0.999_95;
-        if (!surfaceControllerOwnsGrip) body.applyForce(scale(wheelRight, lateralForce));
+        const surfaceSteeringControlsGrip = !command.powerslide
+          && driveableNormal.y < 0.999_95
+          && Math.abs(command.steer) >= 0.01;
+        if (!surfaceSteeringControlsGrip) body.applyForce(scale(wheelRight, lateralForce));
 
-        const braking = Math.abs(speed) > tuning.brakeToReverseSpeed
-          && command.throttle * speed < 0;
+        const braking = Math.abs(surfaceSpeed) > tuning.brakeToReverseSpeed
+          && command.throttle * surfaceSpeed < 0;
+        let wheelDriveForce = ZERO;
         if (braking) {
-          const brakeForce = -Math.sign(speed) * Math.abs(command.throttle) * tuning.brakeForce / 4;
-          body.applyForce(scale(driveForward, brakeForce));
+          wheelDriveForce = scale(
+            driveForward,
+            -Math.sign(surfaceSpeed) * Math.abs(command.throttle) * tuning.brakeForce / 4,
+          );
         } else {
           const driveForce = command.throttle >= 0 ? tuning.engineForce : tuning.reverseForce;
           const requestedDirection = Math.sign(command.throttle);
-          const speedInRequestedDirection = speed * requestedDirection;
+          const speedInRequestedDirection = surfaceSpeed * requestedDirection;
           const maximumDriveSpeed = command.boost
             ? tuning.maximumGroundBoostSpeed
             : requestedDirection < 0
@@ -121,7 +176,14 @@ export class WheelContactSystem {
             0,
             1,
           );
-          body.applyForce(scale(driveForward, command.throttle * driveForce * driveScale / 4));
+          wheelDriveForce = scale(
+            driveForward,
+            command.throttle * driveForce * driveScale / 4,
+          );
+        }
+        if (length(wheelDriveForce) > 0) {
+          body.applyForce(wheelDriveForce);
+          throttleForce = add(throttleForce, wheelDriveForce);
         }
         if (Math.abs(command.throttle) < 0.01 && !command.powerslide) {
           const longitudinalSpeed = dot(pointVelocity, driveForward);
@@ -135,151 +197,235 @@ export class WheelContactSystem {
           );
           body.applyForce(scale(driveForward, coastForce));
         }
-        wheels.push({
-          connectionPoint: connection,
-          contactPoint: hit.point,
-          position: connection,
-          grounded: true,
-          suspensionLength: 0,
-          steeringAngle: wheelSteer,
-          spinAngle: this.wheelSpin,
-        });
-      } else {
-        wheels.push({
-          connectionPoint: connection,
-          contactPoint: add(connection, scale(axes.up, -tuning.wheelRadius)),
-          position: connection,
-          grounded: false,
-          suspensionLength: 0,
-          steeringAngle: wheelSteer,
-          spinAngle: this.wheelSpin,
-        });
       }
+      return {
+        connectionPoint: probe.connection,
+        contactPoint: hit?.point ?? add(probe.connection, scale(probe.direction, tuning.wheelRadius)),
+        position: probe.connection,
+        grounded: hit !== null && !ceilingContact,
+        suspensionLength: 0,
+        steeringAngle: probe.steeringAngle,
+        spinAngle: this.wheelSpin,
+      };
     });
 
-    if (contactCount > 0) {
-      const surfaceNormal = normalize(contactNormalSum);
-      this.surfaceHeading = this.updatedSurfaceHeading(
-        axes.forward,
-        command.steer,
-        this.lastSurfaceNormal,
-        surfaceNormal,
+    const wallJumpRequested = command.jumpPressed
+      && driveableNormal !== null
+      && driveableNormal.y < 0.95;
+    if (wallJumpRequested) {
+      this.surfaceDetachRemaining = tuning.surfaceJumpDetachSeconds;
+      this.adhesionGraceRemaining = 0;
+      this.surfaceMomentumSpeed = 0;
+      this.surfaceMomentumDirection = ZERO;
+      this.surfaceMomentumNormal = UP;
+    } else if (driveableNormal) {
+      tangentVelocity = this.preserveSurfaceMomentum(
+        body,
+        command,
+        driveableNormal,
+        tangentVelocity,
       );
-      this.lastSurfaceNormal = surfaceNormal;
-      this.adhesionGraceRemaining = tuning.surfaceAdhesionGraceSeconds;
-    } else {
-      this.adhesionGraceRemaining = Math.max(0, this.adhesionGraceRemaining - deltaSeconds);
+    } else if (!grounded) {
+      this.surfaceMomentumSpeed = 0;
     }
-    this.applySurfaceAdhesion(body, command, axes.up, speed, contactCount > 0, tuning, deltaSeconds);
-
-    const slopeContactGrace = this.adhesionGraceRemaining > 0 && this.lastSurfaceNormal.y < 0.999_95;
-    return {
-      grounded: contactCount >= 2 || slopeContactGrace,
-      wheels,
-      surfaceNormal: contactCount > 0 || slopeContactGrace ? this.lastSurfaceNormal : null,
+    const adhesionForce = this.applySurfaceAdhesion(
+      body,
+      command,
+      axes.up,
+      wallJumpRequested ? null : driveableNormal,
+      contacts,
+      tangentVelocity,
+      projectedForward,
+      tuning,
+    );
+    const rays: SurfaceRayDebug[] = probes.map((probe) => ({
+      origin: probe.connection,
+      direction: probe.direction,
+      length: probe.length,
+      hitPoint: probe.hit?.point ?? null,
+    }));
+    const debug: CarSurfaceDebug = {
+      grounded,
+      rays,
+      surfaceNormal,
+      projectedForward,
+      velocity: body.linearVelocity(),
+      tangentVelocity,
+      adhesionForce,
+      throttleForce,
     };
+    return { grounded, wheels, surfaceNormal, projectedForward, tangentVelocity, debug };
   }
 
   reset(): void {
     this.wheelSpin = 0;
     this.lastSurfaceNormal = UP;
-    this.surfaceHeading = { x: 0, y: 0, z: -1 };
     this.adhesionGraceRemaining = 0;
+    this.surfaceMomentumSpeed = 0;
+    this.surfaceMomentumDirection = ZERO;
+    this.surfaceMomentumNormal = UP;
+    this.surfaceDetachRemaining = 0;
+  }
+
+  private preserveSurfaceMomentum(
+    body: PhysicsBody,
+    command: PlayerCommand,
+    surfaceNormal: Vec3,
+    tangentVelocity: Vec3,
+  ): Vec3 {
+    const tangentSpeed = length(tangentVelocity);
+    const onFlatSurface = surfaceNormal.y >= 0.999_95;
+    const braking = command.throttle * dot(tangentVelocity, this.tangentDirection(
+      this.rotate(body.rotation(), { x: 0, y: 0, z: -1 }),
+      surfaceNormal,
+      tangentVelocity,
+    )) < 0;
+    if (onFlatSurface) {
+      this.rememberSurfaceMomentum(tangentVelocity, surfaceNormal);
+      return tangentVelocity;
+    }
+    const activeDrive = Math.abs(command.throttle) >= 0.01 || command.boost;
+    if (!activeDrive) {
+      this.rememberSurfaceMomentum(tangentVelocity, surfaceNormal);
+      return tangentVelocity;
+    }
+    const shouldTransportMomentum = !command.powerslide
+      && !braking
+      && tangentSpeed >= 0.35
+      && this.surfaceMomentumSpeed >= 0.35;
+    if (!shouldTransportMomentum) {
+      this.rememberSurfaceMomentum(tangentVelocity, surfaceNormal);
+      return tangentVelocity;
+    }
+    if (Math.abs(command.steer) >= 0.01 && tangentSpeed >= this.surfaceMomentumSpeed) {
+      this.rememberSurfaceMomentum(tangentVelocity, surfaceNormal);
+      return tangentVelocity;
+    }
+
+    const targetSpeed = Math.max(tangentSpeed, this.surfaceMomentumSpeed);
+    // Follow the curve by rotating the prior tangent direction with its normal. Re-projecting the
+    // velocity alone preserves length but gradually leaks wallward momentum into sideways travel.
+    const targetDirection = Math.abs(command.steer) < 0.01
+      ? this.tangentDirection(
+          this.transportBetweenSurfaceNormals(
+            this.surfaceMomentumDirection,
+            this.surfaceMomentumNormal,
+            surfaceNormal,
+          ),
+          surfaceNormal,
+          tangentVelocity,
+        )
+      : normalize(tangentVelocity);
+    const transportedVelocity = scale(targetDirection, targetSpeed);
+    body.setLinearVelocity(transportedVelocity);
+    this.rememberSurfaceMomentum(transportedVelocity, surfaceNormal);
+    return transportedVelocity;
+  }
+
+  private rememberSurfaceMomentum(tangentVelocity: Vec3, surfaceNormal: Vec3): void {
+    this.surfaceMomentumSpeed = length(tangentVelocity);
+    this.surfaceMomentumDirection = this.surfaceMomentumSpeed > 1e-6
+      ? scale(tangentVelocity, 1 / this.surfaceMomentumSpeed)
+      : ZERO;
+    this.surfaceMomentumNormal = surfaceNormal;
+  }
+
+  private transportBetweenSurfaceNormals(
+    direction: Vec3,
+    previousNormal: Vec3,
+    surfaceNormal: Vec3,
+  ): Vec3 {
+    const axis = cross(previousNormal, surfaceNormal);
+    const sine = length(axis);
+    if (sine < 1e-6) return direction;
+    const unitAxis = scale(axis, 1 / sine);
+    const cosine = clamp(dot(previousNormal, surfaceNormal), -1, 1);
+    return add(
+      add(
+        scale(direction, cosine),
+        scale(cross(unitAxis, direction), sine),
+      ),
+      scale(unitAxis, dot(unitAxis, direction) * (1 - cosine)),
+    );
   }
 
   private applySurfaceAdhesion(
     body: PhysicsBody,
     command: PlayerCommand,
     carUp: Vec3,
-    speed: number,
-    hasWheelContact: boolean,
+    surfaceNormal: Vec3 | null,
+    contacts: readonly ContactProbe[],
+    tangentVelocity: Vec3,
+    projectedForward: Vec3,
     tuning: CarTuning,
-    deltaSeconds: number,
-  ): void {
-    if (this.adhesionGraceRemaining <= 0) return;
-    if (this.lastSurfaceNormal.y < -0.05) return;
-    const slopeFactor = clamp((1 - this.lastSurfaceNormal.y) / 0.25, 0, 1);
-    const speedFactor = clamp(Math.abs(speed) / 14, 0, 1);
-    const graceFactor = hasWheelContact
-      ? 1
-      : clamp(this.adhesionGraceRemaining / tuning.surfaceAdhesionGraceSeconds, 0, 1);
+  ): Vec3 {
+    // Grace keeps steering state stable, but forces require a real ray hit so airborne cars are untouched.
+    if (!surfaceNormal || contacts.length === 0 || surfaceNormal.y < -0.05) return ZERO;
+    const slopeFactor = clamp((1 - surfaceNormal.y) / 0.25, 0, 1);
+    if (slopeFactor <= 0) return ZERO;
+    const averageGap = contacts.reduce(
+      (sum, probe) => sum + Math.max(0, probe.hit.distance - tuning.wheelRadius),
+      0,
+    ) / contacts.length;
+    const distanceFactor = clamp(
+      1 - averageGap / Math.max(tuning.wheelContactTolerance + tuning.surfaceContactProbeExtension, 1e-4),
+      0,
+      1,
+    );
+    const speed = length(tangentVelocity);
+    const speedFactor = clamp(speed / 14, 0, 1);
+    const contactFactor = contacts.length / WHEEL_CONNECTIONS.length;
+    const alignmentFactor = clamp((dot(carUp, surfaceNormal) + 0.15) / 1.15, 0, 1);
     const adhesionFactor = tuning.surfaceMinimumAdhesionFactor
       + (1 - tuning.surfaceMinimumAdhesionFactor) * speedFactor;
-    const assist = slopeFactor * adhesionFactor * graceFactor;
-    if (assist <= 0) return;
+    const forceScale = slopeFactor * distanceFactor * contactFactor * alignmentFactor;
 
-    const gravityNormal = scale(
-      this.lastSurfaceNormal,
-      dot(PHYSICS_TUNING.gravity, this.lastSurfaceNormal),
-    );
-    body.applyForce(scale(gravityNormal, -tuning.mass * graceFactor));
-    const adhesionForce = tuning.surfaceAdhesionForce
-      + tuning.surfaceAdhesionSpeedForce * speed ** 2;
-    body.applyForce(scale(this.lastSurfaceNormal, -adhesionForce * assist));
-    const gravityAlongSurface = sub(
-      PHYSICS_TUNING.gravity,
-      scale(this.lastSurfaceNormal, dot(PHYSICS_TUNING.gravity, this.lastSurfaceNormal)),
-    );
-    body.applyForce(scale(
-      gravityAlongSurface,
-      -tuning.mass * tuning.surfaceGravityCompensation * slopeFactor * graceFactor,
-    ));
-    const alignmentAxis = cross(carUp, this.lastSurfaceNormal);
-    const alignmentFactor = hasWheelContact ? 1 : slopeFactor * graceFactor;
-    body.applyTorqueImpulse(scale(
-      alignmentAxis,
-      tuning.surfaceAlignmentTorque * alignmentFactor * deltaSeconds,
-    ));
-    if (Math.abs(command.steer) < 0.01) {
-      const carForward = this.tangentDirection(
-        this.rotate(body.rotation(), { x: 0, y: 0, z: -1 }),
-        this.lastSurfaceNormal,
-      );
-      const headingError = Math.atan2(
-        dot(this.lastSurfaceNormal, cross(carForward, this.surfaceHeading)),
-        dot(carForward, this.surfaceHeading),
-      );
-      body.applyTorqueImpulse(scale(
-        this.lastSurfaceNormal,
-        headingError * tuning.surfaceHeadingTorque * slopeFactor * graceFactor * deltaSeconds,
-      ));
-      const headingSpeed = dot(body.angularVelocity(), this.lastSurfaceNormal);
-      body.applyTorqueImpulse(scale(
-        this.lastSurfaceNormal,
-        -headingSpeed * tuning.surfaceHeadingDamping * slopeFactor * graceFactor * deltaSeconds,
+    const gravityNormal = scale(surfaceNormal, dot(PHYSICS_TUNING.gravity, surfaceNormal));
+    body.applyForce(scale(gravityNormal, -tuning.mass * contactFactor));
+    const gravityAlongSurface = this.tangentVector(PHYSICS_TUNING.gravity, surfaceNormal);
+    if (!command.powerslide) {
+      const surfaceRight = normalize(cross(projectedForward, surfaceNormal));
+      const lateralGravity = scale(surfaceRight, dot(gravityAlongSurface, surfaceRight));
+      body.applyForce(scale(lateralGravity, -tuning.mass * contactFactor));
+    }
+    const requestedDriveDirection = Math.abs(command.throttle) >= 0.01
+      ? Math.sign(command.throttle)
+      : command.boost ? 1 : 0;
+    if (requestedDriveDirection !== 0) {
+      const driveDirection = scale(projectedForward, requestedDriveDirection);
+      const opposingGravity = Math.max(0, -dot(gravityAlongSurface, driveDirection));
+      body.applyForce(scale(
+        driveDirection,
+        tuning.mass
+          * opposingGravity
+          * tuning.surfaceGravityCompensation
+          * slopeFactor
+          * contactFactor,
       ));
     }
+    const adhesionMagnitude = (
+      tuning.surfaceAdhesionForce + tuning.surfaceAdhesionSpeedForce * speed ** 2
+    ) * adhesionFactor * forceScale;
+    const adhesionForce = scale(surfaceNormal, -adhesionMagnitude);
+    body.applyForce(adhesionForce);
+    return adhesionForce;
   }
 
-  private updatedSurfaceHeading(
-    carForward: Vec3,
-    steering: number,
-    previousNormal: Vec3,
-    surfaceNormal: Vec3,
+  private tangentVector(vector: Vec3, surfaceNormal: Vec3): Vec3 {
+    return sub(vector, scale(surfaceNormal, dot(vector, surfaceNormal)));
+  }
+
+  private tangentDirection(direction: Vec3, surfaceNormal: Vec3, fallback: Vec3): Vec3 {
+    const tangent = this.tangentVector(direction, surfaceNormal);
+    if (length(tangent) > 1e-6) return normalize(tangent);
+    const fallbackTangent = this.tangentVector(fallback, surfaceNormal);
+    return length(fallbackTangent) > 1e-6 ? normalize(fallbackTangent) : ZERO;
+  }
+
+  private rotate(
+    rotation: { readonly x: number; readonly y: number; readonly z: number; readonly w: number },
+    vector: Vec3,
   ): Vec3 {
-    if (surfaceNormal.y >= 0.999_95 || Math.abs(steering) >= 0.01) {
-      return this.tangentDirection(carForward, surfaceNormal);
-    }
-    const axis = cross(previousNormal, surfaceNormal);
-    const sine = length(axis);
-    if (sine < 1e-6) return this.tangentDirection(this.surfaceHeading, surfaceNormal);
-    const unitAxis = scale(axis, 1 / sine);
-    const cosine = clamp(dot(previousNormal, surfaceNormal), -1, 1);
-    const transported = add(
-      add(
-        scale(this.surfaceHeading, cosine),
-        scale(cross(unitAxis, this.surfaceHeading), sine),
-      ),
-      scale(unitAxis, dot(unitAxis, this.surfaceHeading) * (1 - cosine)),
-    );
-    return this.tangentDirection(transported, surfaceNormal);
-  }
-
-  private tangentDirection(direction: Vec3, surfaceNormal: Vec3): Vec3 {
-    return normalize(sub(direction, scale(surfaceNormal, dot(direction, surfaceNormal))));
-  }
-
-  private rotate(rotation: { readonly x: number; readonly y: number; readonly z: number; readonly w: number }, vector: Vec3): Vec3 {
     const tx = 2 * (rotation.y * vector.z - rotation.z * vector.y);
     const ty = 2 * (rotation.z * vector.x - rotation.x * vector.z);
     const tz = 2 * (rotation.x * vector.y - rotation.y * vector.x);

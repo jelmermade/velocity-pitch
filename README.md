@@ -15,7 +15,8 @@ Velocity Pitch is a browser-based rocket car soccer game built with TypeScript, 
 - A 60 Hz simulation and adaptive render resolution targeting 60 FPS.
 - Persistent client preferences for camera distance, field of view, bloom, volume, FPS visibility, car-position visibility, and driver name.
 - Independent FPS and car-position readouts for debugging.
-- A temporary five-minute 3v3 Bot Lab with persistent tactical reinforcement and per-bot reward scores.
+- A temporary five-minute 3v3 Bot Lab with persistent tactical reinforcement, per-bot reward scores,
+  live tactical heading arrows, and a projected ball trajectory for debugging.
 
 ## Requirements
 
@@ -67,7 +68,13 @@ Variables prefixed with `VITE_` are bundled into browser code and must never con
 | `npm run typecheck` | Run TypeScript project checks. |
 | `npm run lint` | Run ESLint. |
 | `npm test` | Run the Vitest suite. |
+| `npm run test:e2e` | Run the browser-level arena flow in Chrome. |
+| `npm run test:e2e:headed` | Run the e2e flow in a visible Chrome window. |
+| `npm run test:e2e:ui` | Open Playwright's interactive runner and trace viewer. |
 | `npm run test:bot-evaluation` | Simulate a five-minute 3v3 bot match, write its metrics, and persist the next knowledge generation. |
+| `npm run evaluate:bot-v3` | Run a non-persisting v3 candidate evaluation with shot-target and aerial accuracy metrics. |
+| `npm run train:bot-v3` | Run evaluation v3 and merge tactical plus contact-technique observations into shared knowledge. |
+| `npm run analyze:bot-evaluations` | Summarize all current evaluation reports in `data/`. |
 | `npm run build` | Type-check and build the production client into `dist`. |
 
 ## Controls
@@ -122,5 +129,8 @@ Run the complete verification sequence before merging changes:
 npm run typecheck
 npm run lint
 npm test
+npm run test:e2e
 npm run build
 ```
+
+The Vitest suite contains unit and integration coverage for geometry, physics, rendering helpers, and networking. The Playwright suite starts the real Vite application and includes a visible car-behavior showcase covering acceleration, braking, reverse, left/right steering, left/right powerslides, jumping, pitch-to-flight, boost flight, both air-roll directions, aerial damping, off-angle landing, the complete wall-approach speed/angle matrix, wall steering, and wall-jump detachment. Use `npm run test:e2e:ui` to select and replay individual scenarios, or `npm run test:e2e:headed` to watch the complete sequence in Chrome.

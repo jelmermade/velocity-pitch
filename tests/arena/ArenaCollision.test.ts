@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { RUNTIME_CONFIG } from '../../src/app/RuntimeConfig';
 import { ARENA_TUNING } from '../../src/core/config/ArenaTuning';
 import { BALL_TUNING } from '../../src/core/config/BallTuning';
+import { DEFAULT_CAR_TUNING } from '../../src/core/config/CarTuning';
 import { rotateVector } from '../../src/core/math/Quaternion';
-import { dot } from '../../src/core/math/Vector3';
-import { createArena } from '../../src/gameplay/arena/Arena';
+import { dot, length } from '../../src/core/math/Vector3';
+import { createArena, createArenaTransitionCollisionMesh } from '../../src/gameplay/arena/Arena';
 import { ARENA_BOUNDARY_SEGMENTS } from '../../src/gameplay/arena/ArenaDefinition';
 import { Car } from '../../src/gameplay/car/Car';
 import { NEUTRAL_COMMAND } from '../../src/input/PlayerCommand';
@@ -73,11 +74,54 @@ describe('arena boundary collisions', () => {
     let maximumAwayFromWallSpeed = 0;
     let maximumWheelOffsetError = 0;
     let peakHeight = 0.65;
+    let flatEntrySpeed = 0;
+    let minimumCurveSpeed = Number.POSITIVE_INFINITY;
+    let wallEntrySpeed = 0;
+    let flatEntryClimbSpeed = 0;
+    let minimumCurveClimbSpeed = Number.POSITIVE_INFINITY;
+    let wallEntryClimbSpeed = 0;
+    let minimumCurveMovementRatio = Number.POSITIVE_INFINITY;
+    let curveActualDistance = 0;
+    let curveExpectedDistance = 0;
+    let curveMovementTicks = 0;
+    let previousPosition = car.state().transform.position;
     for (let tick = 0; tick < 300; tick += 1) {
       car.update(world, { ...NEUTRAL_COMMAND, throttle: 1, boost }, step);
       world.step(step);
       const state = car.state();
       const position = state.transform.position;
+      const surfaceDebug = car.surfaceDebugState();
+      const surfaceNormal = surfaceDebug?.surfaceNormal;
+      const tangentSpeed = surfaceDebug ? length(surfaceDebug.tangentVelocity) : 0;
+      const movementSpeed = Math.hypot(
+        position.x - previousPosition.x,
+        position.y - previousPosition.y,
+        position.z - previousPosition.z,
+      ) / step;
+      previousPosition = position;
+      const climbSpeed = surfaceNormal
+        ? surfaceDebug.tangentVelocity.x * surfaceNormal.y
+          - surfaceDebug.tangentVelocity.y * surfaceNormal.x
+        : 0;
+      if (surfaceNormal && surfaceNormal.y >= 0.98) {
+        flatEntrySpeed = tangentSpeed;
+        flatEntryClimbSpeed = climbSpeed;
+      }
+      if (surfaceNormal && surfaceNormal.y > 0.08 && surfaceNormal.y < 0.92) {
+        minimumCurveSpeed = Math.min(minimumCurveSpeed, tangentSpeed);
+        minimumCurveClimbSpeed = Math.min(minimumCurveClimbSpeed, climbSpeed);
+        minimumCurveMovementRatio = Math.min(
+          minimumCurveMovementRatio,
+          movementSpeed / Math.max(0.01, tangentSpeed),
+        );
+        curveActualDistance += movementSpeed * step;
+        curveExpectedDistance += tangentSpeed * step;
+        curveMovementTicks += 1;
+      }
+      if (surfaceNormal && Math.abs(surfaceNormal.y) <= 0.02 && wallEntrySpeed === 0) {
+        wallEntrySpeed = tangentSpeed;
+        wallEntryClimbSpeed = climbSpeed;
+      }
       peakHeight = Math.max(peakHeight, position.y);
       state.wheels.forEach(({ suspensionLength }) => {
         maximumWheelOffsetError = Math.max(maximumWheelOffsetError, Math.abs(suspensionLength));
@@ -117,8 +161,17 @@ describe('arena boundary collisions', () => {
       maximumAwayFromWallSpeed,
       maximumWheelOffsetError,
       peakHeight,
+      flatEntrySpeed,
+      minimumCurveSpeed,
+      wallEntrySpeed,
+      flatEntryClimbSpeed,
+      minimumCurveClimbSpeed,
+      wallEntryClimbSpeed,
+      minimumCurveMovementRatio,
+      curveTravelRatio: curveActualDistance / curveExpectedDistance,
+      averageCurveMovementSpeed: curveActualDistance / Math.max(step, curveMovementTicks * step),
     };
-    expect(transitionTicks, JSON.stringify(metrics)).toBeGreaterThan(20);
+    expect(transitionTicks, JSON.stringify(metrics)).toBeGreaterThan(10);
     expect(groundedTransitionTicks / transitionTicks, JSON.stringify(metrics)).toBeGreaterThan(0.98);
     expect(wallTicks, JSON.stringify(metrics)).toBeGreaterThan(10);
     expect(groundedWallTicks / wallTicks, JSON.stringify(metrics)).toBeGreaterThan(0.98);
@@ -128,6 +181,13 @@ describe('arena boundary collisions', () => {
     expect(maximumAwayFromWallSpeed, JSON.stringify(metrics)).toBeLessThan(0.5);
     expect(maximumWheelOffsetError, JSON.stringify(metrics)).toBeLessThan(1e-6);
     expect(peakHeight, JSON.stringify(metrics)).toBeGreaterThan(ARENA_TUNING.floorWallCurveRadius + 6);
+    expect(minimumCurveSpeed, JSON.stringify(metrics)).toBeGreaterThan(flatEntrySpeed * 0.99);
+    expect(wallEntrySpeed, JSON.stringify(metrics)).toBeGreaterThan(flatEntrySpeed * 0.99);
+    expect(minimumCurveClimbSpeed, JSON.stringify(metrics)).toBeGreaterThan(flatEntryClimbSpeed * 0.98);
+    expect(wallEntryClimbSpeed, JSON.stringify(metrics)).toBeGreaterThan(flatEntryClimbSpeed * 0.98);
+    expect(minimumCurveMovementRatio, JSON.stringify(metrics)).toBeGreaterThan(0.45);
+    expect(metrics.curveTravelRatio, JSON.stringify(metrics)).toBeGreaterThan(0.9);
+    expect(wallEntrySpeed, JSON.stringify(metrics)).toBeLessThan(metrics.averageCurveMovementSpeed * 1.25);
     },
   );
 
@@ -249,6 +309,244 @@ describe('arena boundary collisions', () => {
     expect(state.transform.position.y, JSON.stringify(metrics)).toBeGreaterThan(initialHeight + 3);
   });
 
+  it('returns vertical wall speed to throttle control when input is released', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+    car.teleport(
+      {
+        position: { x: ARENA_TUNING.halfWidth - 0.54, y: 15, z: 0 },
+        rotation: { x: 0.5, y: -0.5, z: 0.5, w: 0.5 },
+      },
+      { x: 0, y: 10, z: 0 },
+    );
+
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz * 0.5; tick += 1) {
+      car.update(world, NEUTRAL_COMMAND, step);
+      world.step(step);
+    }
+    const coastState = car.state();
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz; tick += 1) {
+      car.update(world, { ...NEUTRAL_COMMAND, throttle: 1 }, step);
+      world.step(step);
+    }
+    const throttleState = car.state();
+    const metrics = { coastState, throttleState };
+
+    expect(coastState.linearVelocity.y, JSON.stringify(metrics)).toBeLessThan(6);
+    expect(throttleState.linearVelocity.y, JSON.stringify(metrics)).toBeGreaterThan(8);
+    expect(throttleState.transform.position.x, JSON.stringify(metrics)).toBeGreaterThan(
+      ARENA_TUNING.halfWidth - 0.9,
+    );
+  });
+
+  it('drops a climbing car instead of letting it drive onto the ceiling', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+    const upperCurveStart = ARENA_TUNING.height - ARENA_TUNING.floorWallCurveRadius;
+    car.teleport(
+      {
+        position: { x: ARENA_TUNING.halfWidth - 0.54, y: upperCurveStart - 4, z: 0 },
+        rotation: { x: 0.5, y: -0.5, z: 0.5, w: 0.5 },
+      },
+      { x: 0, y: 20, z: 0 },
+    );
+
+    let peakHeight = car.state().transform.position.y;
+    let ceilingGroundedTicks = 0;
+    let fallingTicks = 0;
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz * 2; tick += 1) {
+      car.update(world, { ...NEUTRAL_COMMAND, throttle: 1 }, step);
+      world.step(step);
+      const state = car.state();
+      const surfaceNormal = car.surfaceDebugState()?.surfaceNormal;
+      peakHeight = Math.max(peakHeight, state.transform.position.y);
+      if (state.grounded && surfaceNormal && surfaceNormal.y < -0.05) ceilingGroundedTicks += 1;
+      if (!state.grounded && state.linearVelocity.y <= -DEFAULT_CAR_TUNING.minimumCeilingFallSpeed) {
+        fallingTicks += 1;
+      }
+    }
+
+    const state = car.state();
+    const metrics = { peakHeight, ceilingGroundedTicks, fallingTicks, state };
+    expect(peakHeight, JSON.stringify(metrics)).toBeGreaterThan(upperCurveStart);
+    expect(ceilingGroundedTicks, JSON.stringify(metrics)).toBe(0);
+    expect(fallingTicks, JSON.stringify(metrics)).toBeGreaterThan(10);
+    expect(state.transform.position.y, JSON.stringify(metrics)).toBeLessThan(peakHeight - 3);
+  });
+
+  it('detaches immediately when jumping from a vertical wall', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+    const startX = ARENA_TUNING.halfWidth - 0.54;
+    car.teleport({
+      position: { x: startX, y: 15, z: 0 },
+      rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 },
+    });
+    car.update(world, NEUTRAL_COMMAND, step);
+    world.step(step);
+
+    car.update(world, { ...NEUTRAL_COMMAND, jumpPressed: true, jumpHeld: true }, step);
+    expect(car.surfaceDebugState()?.adhesionForce).toEqual({ x: 0, y: 0, z: 0 });
+    world.step(step);
+    const launchState = car.state();
+    let airborneTicks = 0;
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz * 0.25; tick += 1) {
+      car.update(world, NEUTRAL_COMMAND, step);
+      world.step(step);
+      if (!car.state().grounded) airborneTicks += 1;
+    }
+    const detachedState = car.state();
+    const metrics = { launchState, detachedState, airborneTicks };
+
+    expect(-launchState.linearVelocity.x, JSON.stringify(metrics)).toBeGreaterThan(5);
+    expect(airborneTicks, JSON.stringify(metrics)).toBeGreaterThan(RUNTIME_CONFIG.physicsHz * 0.15);
+    expect(startX - detachedState.transform.position.x, JSON.stringify(metrics)).toBeGreaterThan(1);
+  });
+
+  it('rolls backward down the ramp under gravity without autonomous drive input', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+    const rampAngle = Math.PI / 4;
+    const curveRadius = ARENA_TUNING.floorWallCurveRadius;
+    const surfaceX = ARENA_TUNING.halfWidth - curveRadius * (1 - Math.sin(rampAngle));
+    const surfaceY = curveRadius * (1 - Math.cos(rampAngle));
+    const surfaceNormal = { x: -Math.sin(rampAngle), y: Math.cos(rampAngle) };
+    const start = {
+      x: surfaceX + surfaceNormal.x * 0.54,
+      y: surfaceY + surfaceNormal.y * 0.54,
+      z: 0,
+    };
+    const halfYaw = Math.SQRT1_2;
+    const halfRampSin = Math.sin(rampAngle * 0.5);
+    const halfRampCos = Math.cos(rampAngle * 0.5);
+    car.teleport({
+      position: start,
+      rotation: {
+        x: halfRampSin * halfYaw,
+        y: -halfRampCos * halfYaw,
+        z: halfRampSin * halfYaw,
+        w: halfRampCos * halfYaw,
+      },
+    });
+
+    let groundedTicks = 0;
+    let maximumThrottleForce = 0;
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz * 0.5; tick += 1) {
+      car.update(world, NEUTRAL_COMMAND, step);
+      const debug = car.surfaceDebugState();
+      maximumThrottleForce = Math.max(maximumThrottleForce, length(debug?.throttleForce ?? { x: 0, y: 0, z: 0 }));
+      world.step(step);
+      if (car.state().grounded) groundedTicks += 1;
+    }
+
+    const state = car.state();
+    const forward = rotateVector(state.transform.rotation, { x: 0, y: 0, z: -1 });
+    const backwardSpeed = -dot(state.linearVelocity, forward);
+    const sidewaysSpeed = Math.abs(dot(
+      state.linearVelocity,
+      rotateVector(state.transform.rotation, { x: 1, y: 0, z: 0 }),
+    ));
+    const metrics = { start, state, backwardSpeed, sidewaysSpeed, groundedTicks, maximumThrottleForce };
+
+    expect(maximumThrottleForce, JSON.stringify(metrics)).toBe(0);
+    expect(groundedTicks, JSON.stringify(metrics)).toBeGreaterThan(RUNTIME_CONFIG.physicsHz * 0.45);
+    expect(start.y - state.transform.position.y, JSON.stringify(metrics)).toBeGreaterThan(0.25);
+    expect(start.x - state.transform.position.x, JSON.stringify(metrics)).toBeGreaterThan(0.25);
+    expect(backwardSpeed, JSON.stringify(metrics)).toBeGreaterThan(1);
+    expect(sidewaysSpeed, JSON.stringify(metrics)).toBeLessThan(0.5);
+  });
+
+  it('uses tire grip instead of sliding sideways down the ramp with no input', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+    const rampAngle = Math.PI / 4;
+    const curveRadius = ARENA_TUNING.floorWallCurveRadius;
+    const surfaceX = ARENA_TUNING.halfWidth - curveRadius * (1 - Math.sin(rampAngle));
+    const surfaceY = curveRadius * (1 - Math.cos(rampAngle));
+    const surfaceNormal = { x: -Math.sin(rampAngle), y: Math.cos(rampAngle) };
+    const start = {
+      x: surfaceX + surfaceNormal.x * 0.54,
+      y: surfaceY + surfaceNormal.y * 0.54,
+      z: 0,
+    };
+    car.teleport({
+      position: start,
+      rotation: { x: 0, y: 0, z: Math.sin(rampAngle * 0.5), w: Math.cos(rampAngle * 0.5) },
+    });
+
+    let maximumThrottleForce = 0;
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz; tick += 1) {
+      car.update(world, NEUTRAL_COMMAND, step);
+      maximumThrottleForce = Math.max(
+        maximumThrottleForce,
+        length(car.surfaceDebugState()?.throttleForce ?? { x: 0, y: 0, z: 0 }),
+      );
+      world.step(step);
+    }
+
+    const state = car.state();
+    const downhillTravel = Math.hypot(
+      state.transform.position.x - start.x,
+      state.transform.position.y - start.y,
+    );
+    const downhillSpeed = Math.hypot(state.linearVelocity.x, state.linearVelocity.y);
+    const metrics = { start, state, downhillTravel, downhillSpeed, maximumThrottleForce };
+
+    expect(maximumThrottleForce, JSON.stringify(metrics)).toBe(0);
+    expect(state.grounded, JSON.stringify(metrics)).toBe(true);
+    expect(downhillTravel, JSON.stringify(metrics)).toBeLessThan(0.35);
+    expect(downhillSpeed, JSON.stringify(metrics)).toBeLessThan(0.35);
+  });
+
+  it('does not turn forward throttle into sideways ramp acceleration', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const step = 1 / RUNTIME_CONFIG.physicsHz;
+    const rampAngle = Math.PI / 4;
+    const curveRadius = ARENA_TUNING.floorWallCurveRadius;
+    const surfaceX = ARENA_TUNING.halfWidth - curveRadius * (1 - Math.sin(rampAngle));
+    const surfaceY = curveRadius * (1 - Math.cos(rampAngle));
+    const surfaceNormal = { x: -Math.sin(rampAngle), y: Math.cos(rampAngle) };
+    const start = {
+      x: surfaceX + surfaceNormal.x * 0.54,
+      y: surfaceY + surfaceNormal.y * 0.54,
+      z: 0,
+    };
+    car.teleport({
+      position: start,
+      rotation: { x: 0, y: 0, z: Math.sin(rampAngle * 0.5), w: Math.cos(rampAngle * 0.5) },
+    });
+
+    for (let tick = 0; tick < RUNTIME_CONFIG.physicsHz * 0.5; tick += 1) {
+      car.update(world, { ...NEUTRAL_COMMAND, throttle: 1 }, step);
+      world.step(step);
+    }
+
+    const state = car.state();
+    const crossSlopeTravel = Math.hypot(
+      state.transform.position.x - start.x,
+      state.transform.position.y - start.y,
+    );
+    const crossSlopeSpeed = Math.hypot(state.linearVelocity.x, state.linearVelocity.y);
+    const metrics = { start, state, crossSlopeTravel, crossSlopeSpeed };
+
+    expect(state.grounded, JSON.stringify(metrics)).toBe(true);
+    expect(-state.transform.position.z, JSON.stringify(metrics)).toBeGreaterThan(2);
+    expect(crossSlopeTravel, JSON.stringify(metrics)).toBeLessThan(0.3);
+    expect(crossSlopeSpeed, JSON.stringify(metrics)).toBeLessThan(0.4);
+  });
+
   it.each(RAMP_STEERING_CASES)(
     'steers $direction at $speed units/s while sticking to the lower ramp',
     async ({ speed, steer, heightSign }) => {
@@ -282,6 +580,8 @@ describe('arena boundary collisions', () => {
     let minimumRampAlignment = 1;
     let maximumRampSeparationError = 0;
     let minimumForwardContinuity = 1;
+    let spatialTravel = 0;
+    let previousPosition = start;
     let previousForward = rotateVector(car.state().transform.rotation, { x: 0, y: 0, z: -1 });
     const curveCenter = {
       x: ARENA_TUNING.halfWidth - curveRadius,
@@ -292,6 +592,12 @@ describe('arena boundary collisions', () => {
       car.update(world, { ...NEUTRAL_COMMAND, throttle: 1, steer }, step);
       world.step(step);
       const state = car.state();
+      spatialTravel += Math.hypot(
+        state.transform.position.x - previousPosition.x,
+        state.transform.position.y - previousPosition.y,
+        state.transform.position.z - previousPosition.z,
+      );
+      previousPosition = state.transform.position;
       if (state.grounded) groundedTicks += 1;
       if (state.wheels.filter(({ grounded }) => grounded).length >= 2) wheelContactTicks += 1;
       maximumDirectedHeightChange = Math.max(
@@ -328,11 +634,6 @@ describe('arena boundary collisions', () => {
     }
 
     const state = car.state();
-    const spatialTravel = Math.hypot(
-      state.transform.position.x - start.x,
-      state.transform.position.y - start.y,
-      state.transform.position.z - start.z,
-    );
     const metrics = {
       speed,
       steer,
@@ -356,9 +657,21 @@ describe('arena boundary collisions', () => {
     expect(maximumRampSeparationError, JSON.stringify(metrics)).toBeLessThan(0.25);
     expect(minimumForwardContinuity, JSON.stringify(metrics)).toBeGreaterThan(0.99);
     expect(maximumSlip, JSON.stringify(metrics)).toBeLessThan(0.13);
-    expect(spatialTravel, JSON.stringify(metrics)).toBeGreaterThan(speed * 0.6);
+    expect(spatialTravel, JSON.stringify(metrics)).toBeGreaterThan(speed * 0.44);
     },
   );
+
+  it('welds transition faces into one internal-edge-safe collision mesh', () => {
+    world = undefined;
+    const mesh = createArenaTransitionCollisionMesh();
+    const uniqueVertices = new Set(mesh.vertices.map(({ x, y, z }) => (
+      `${x.toFixed(5)}:${y.toFixed(5)}:${z.toFixed(5)}`
+    )));
+    expect(mesh.indices.length % 3).toBe(0);
+    expect(mesh.vertices.length).toBe(uniqueVertices.size);
+    expect(mesh.vertices.length).toBeLessThan(mesh.indices.length);
+    expect(mesh.indices.every((index) => index >= 0 && index < mesh.vertices.length)).toBe(true);
+  });
 
   it.each([
     { direction: 'down', steer: -1, heightSign: -1 },

@@ -20,11 +20,15 @@ describe('bot training session', () => {
     session.commandsForTick(0, NEUTRAL_COMMAND, before);
     const commands = session.commandsForTick(1, { ...NEUTRAL_COMMAND, togglePause: true }, after);
     const azureLeader = session.trainingState().entries.find(({ playerId }) => playerId === 'bot-azure-0');
+    const groundTechniqueValue = Object.values(
+      session.knowledgeObservations().techniques.ground,
+    ).reduce((total, observation) => total + observation.totalValue, 0);
 
     expect(session.players).toHaveLength(6);
     expect(commands.size).toBe(6);
     expect(commands.get(session.localPlayerId)?.togglePause).toBe(true);
     expect(azureLeader?.points).toBeGreaterThan(0);
+    expect(groundTechniqueValue).toBeGreaterThan(0);
   });
 
   it('merges learned policy windows and persists them when flushed', async () => {
@@ -50,6 +54,8 @@ describe('bot training session', () => {
     expect(persisted).toHaveLength(1);
     expect(persisted[0]?.striker).toBeDefined();
     expect(persisted[0]?.defender).toBeDefined();
+    expect(persisted[0]?.techniques.ground).toBeDefined();
+    expect(persisted[0]?.techniques.aerial).toBeDefined();
   });
 
   it('waits for shared knowledge persistence before completing a learning cycle', async () => {
@@ -98,6 +104,64 @@ describe('bot training session', () => {
 
     expect(attacker?.points).toBeGreaterThan(7);
     expect(victim?.points).toBeLessThan(0);
+  });
+
+  it('adds reward when ground boost produces above-normal closing speed', () => {
+    const runApproach = (boosting: boolean): number => {
+      const session = new BotTrainingSession(BUILT_IN_BOT_KNOWLEDGE, undefined, TEST_RANDOM);
+      const playerId = session.localPlayerId;
+      const before = frameFor(session, 0, -30, 0);
+      const beforeCommand = session.commandsForTick(0, NEUTRAL_COMMAND, before).get(playerId);
+      const previousCar = before.cars[playerId] as CarState;
+      const nextCar: CarState = {
+        ...previousCar,
+        transform: {
+          ...previousCar.transform,
+          position: { ...previousCar.transform.position, z: previousCar.transform.position.z - 0.44 },
+        },
+        linearVelocity: { x: 0, y: 0, z: -26 },
+        boosting,
+      };
+      const after: AuthoritativeFrame = {
+        ...before,
+        sequence: 1,
+        cars: { ...before.cars, [playerId]: nextCar },
+        snapshot: { ...before.snapshot, tick: 1, car: nextCar },
+      };
+
+      expect(beforeCommand?.boost).toBe(true);
+      session.commandsForTick(1, NEUTRAL_COMMAND, after);
+      return session.trainingState().entries.find(({ playerId: id }) => id === playerId)?.lastReward ?? 0;
+    };
+
+    expect(runApproach(true) - runApproach(false)).toBeGreaterThan(0.005);
+  });
+
+  it('rewards a hard directed hit more than a soft touch', () => {
+    const runTouch = (ballSpeed: number): number => {
+      const session = new BotTrainingSession(BUILT_IN_BOT_KNOWLEDGE, undefined, TEST_RANDOM);
+      const playerId = session.localPlayerId;
+      session.commandsForTick(0, NEUTRAL_COMMAND, frameFor(session, 0, 0, 0));
+      session.commandsForTick(1, NEUTRAL_COMMAND, frameFor(session, 1, -1, -ballSpeed));
+      return session.trainingState().entries.find(({ playerId: id }) => id === playerId)?.points ?? 0;
+    };
+
+    expect(runTouch(24)).toBeGreaterThan(runTouch(5) + 8);
+  });
+
+  it('penalizes a boosted approach that passes the ball without contact', () => {
+    const runMiss = (speed: number): number => {
+      const session = new BotTrainingSession(BUILT_IN_BOT_KNOWLEDGE, undefined, TEST_RANDOM);
+      const playerId = session.localPlayerId;
+      const near = withLocalMotion(frameFor(session, 0, 0, 0), playerId, speed, speed > 22);
+      const beyond = withLocalMotion(frameFor(session, 10, 0, 0), playerId, speed, false);
+
+      session.commandsForTick(0, NEUTRAL_COMMAND, near);
+      session.commandsForTick(10, NEUTRAL_COMMAND, beyond);
+      return session.trainingState().entries.find(({ playerId: id }) => id === playerId)?.lastReward ?? 0;
+    };
+
+    expect(runMiss(26)).toBeLessThan(runMiss(12) - 2);
   });
 
   it('penalizes an aerial attempt that lands without touching the ball', () => {
@@ -179,3 +243,18 @@ const withBallHeight = (frame: AuthoritativeFrame, y: number): AuthoritativeFram
     },
   },
 });
+
+const withLocalMotion = (
+  frame: AuthoritativeFrame,
+  playerId: string,
+  speed: number,
+  boosting: boolean,
+): AuthoritativeFrame => {
+  const car = frame.cars[playerId] as CarState;
+  const movingCar = { ...car, linearVelocity: { x: 0, y: 0, z: -speed }, boosting };
+  return {
+    ...frame,
+    cars: { ...frame.cars, [playerId]: movingCar },
+    snapshot: { ...frame.snapshot, car: movingCar },
+  };
+};

@@ -4,6 +4,26 @@ import { WHEEL_CONNECTIONS } from '../../src/gameplay/car/WheelState';
 import { CarView } from '../../src/rendering/views/CarView';
 
 describe('car wheel rendering', () => {
+  it('builds a raised, detailed shell above the rigid wheel mounts', () => {
+    const view = new CarView('coral');
+    const chassis = view.group.getObjectByName('body-chassis');
+    const undertray = view.group.getObjectByName('body-undertray');
+
+    expect(chassis?.position.y).toBeGreaterThan(0.2);
+    expect(undertray?.position.y).toBeGreaterThan(0);
+    expect(view.group.getObjectByName('hood-wedge')).toBeDefined();
+    expect(view.group.getObjectByName('front-splitter')).toBeDefined();
+    expect(view.group.getObjectByName('rear-diffuser')).toBeDefined();
+    expect(view.group.getObjectByName('left-side-accent')).toBeDefined();
+    expect(view.group.getObjectByName('right-side-accent')).toBeDefined();
+    expect(view.group.getObjectByName('rear-spoiler')).toBeDefined();
+    expect(view.group.getObjectByName('vehicle-physics-debug')).toBeDefined();
+    expect(view.group.getObjectByName('surface-ray-0')).toBeDefined();
+    expect(view.group.getObjectByName('surface-normal')).toBeDefined();
+    expect(view.group.getObjectByName('tangent-velocity')).toBeDefined();
+    view.dispose();
+  });
+
   it('keeps rigid wheels attached to local mounts even when network positions are stale', () => {
     const view = new CarView();
     const state: CarState = {

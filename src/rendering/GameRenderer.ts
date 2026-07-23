@@ -13,6 +13,8 @@ import { BallView } from './views/BallView';
 import { CarView } from './views/CarView';
 import { BoostPickupView } from './views/BoostPickupView';
 import { GoalExplosionView } from './views/GoalExplosionView';
+import { BotMatchDebugView } from './views/BotMatchDebugView';
+import type { BotTacticalPlan } from '../gameplay/bots/BotTeamCoordinator';
 
 export class GameRenderer {
   readonly scene = new THREE.Scene();
@@ -28,12 +30,14 @@ export class GameRenderer {
   private readonly boostPickups = new BoostPickupView();
   private readonly goalExplosion: GoalExplosionView;
   private readonly adaptivePixelRatio: AdaptivePixelRatio;
+  private readonly botMatchDebug: BotMatchDebugView | null;
 
   constructor(
     container: HTMLElement,
     events: EventBus<GameEventMap>,
     players: readonly LobbyPlayer[],
     private readonly localPlayerId: string,
+    botMatchDebugEnabled = false,
   ) {
     this.scene.background = new THREE.Color(0x07141b);
     this.scene.fog = new THREE.FogExp2(0x07141b, 0.0065);
@@ -63,12 +67,14 @@ export class GameRenderer {
     this.arena = new ArenaView();
     players.forEach((player) => this.cars.set(player.id, new CarView(player.team)));
     this.goalExplosion = new GoalExplosionView(events);
+    this.botMatchDebug = botMatchDebugEnabled ? new BotMatchDebugView(players) : null;
     this.scene.add(
       this.arena.group,
       this.boostPickups.group,
       ...[...this.cars.values()].map(({ group }) => group),
       this.ball.group,
       this.goalExplosion.group,
+      ...(this.botMatchDebug ? [this.botMatchDebug.group] : []),
     );
     this.bloom = new BloomPipeline(this.renderer, this.scene, this.camera);
     this.adaptivePixelRatio = new AdaptivePixelRatio(
@@ -84,6 +90,7 @@ export class GameRenderer {
     snapshot: SimulationSnapshot,
     carStates?: Readonly<Record<string, CarState>>,
     deltaSeconds = 0,
+    tacticalStates?: ReadonlyMap<string, BotTacticalPlan>,
   ): void {
     this.cars.forEach((view, playerId) => {
       const state = selectCarStateForRender(playerId, this.localPlayerId, snapshot, carStates);
@@ -92,6 +99,12 @@ export class GameRenderer {
     });
     this.ball.update(snapshot.ball, snapshot.match.phase !== 'ended');
     this.boostPickups.update(snapshot.boostPickups);
+    this.botMatchDebug?.update(
+      carStates,
+      tacticalStates,
+      snapshot.ball,
+      snapshot.match.phase !== 'ended',
+    );
   }
 
   render(deltaSeconds: number): void {
@@ -115,6 +128,7 @@ export class GameRenderer {
     this.ball.dispose();
     this.boostPickups.dispose();
     this.goalExplosion.dispose();
+    this.botMatchDebug?.dispose();
     this.nameplateLayer.remove();
     this.bloom.dispose();
     this.renderer.dispose();

@@ -321,6 +321,28 @@ describe('Car stability', () => {
     );
   });
 
+  it('caps combined collision spin to the controllable angular envelope', async () => {
+    world = await RapierPhysicsWorld.create();
+    const car = new Car(world);
+    car.teleport(
+      {
+        position: { x: 0, y: 12, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+      { x: 0, y: 0, z: 0 },
+      { x: 9, y: -8, z: 10 },
+    );
+
+    car.update(world, NEUTRAL_COMMAND, 1 / 120);
+
+    const angularVelocity = car.state().angularVelocity;
+    expect(Math.hypot(
+      angularVelocity.x,
+      angularVelocity.y,
+      angularVelocity.z,
+    )).toBeLessThanOrEqual(DEFAULT_CAR_TUNING.maximumAerialAngularSpeed + 0.251);
+  });
+
   it('damps aerial rotation quickly after control input is released', async () => {
     world = await RapierPhysicsWorld.create();
     const car = new Car(world);
@@ -383,6 +405,74 @@ describe('Car stability', () => {
     expect(state.grounded, JSON.stringify(metrics)).toBe(true);
     expect(up.y, JSON.stringify(metrics)).toBeGreaterThan(0.95);
     expect(Math.hypot(state.angularVelocity.x, state.angularVelocity.y, state.angularVelocity.z), JSON.stringify(metrics)).toBeLessThan(0.2);
+  });
+
+  it('settles a four-wheel landing without axle rocking or wheel penetration', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    car.teleport(
+      {
+        position: { x: 0.03, y: 3, z: 0.02 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+      { x: 0, y: -7, z: 0 },
+    );
+
+    let landed = false;
+    let maximumSettledTiltSpeed = 0;
+    let minimumWheelHeight = Number.POSITIVE_INFINITY;
+    for (let tick = 0; tick < 360; tick += 1) {
+      car.update(world, NEUTRAL_COMMAND, 1 / 120);
+      world.step(1 / 120);
+      const state = car.state();
+      const allWheelsGrounded = state.wheels.every(({ grounded }) => grounded);
+      if (allWheelsGrounded) landed = true;
+      if (!landed || tick < 90) continue;
+      maximumSettledTiltSpeed = Math.max(
+        maximumSettledTiltSpeed,
+        Math.hypot(state.angularVelocity.x, state.angularVelocity.z),
+      );
+      minimumWheelHeight = Math.min(
+        minimumWheelHeight,
+        ...state.wheels.map(({ position }) => position.y),
+      );
+    }
+
+    const state = car.state();
+    const up = rotateVector(state.transform.rotation, { x: 0, y: 1, z: 0 });
+    const metrics = { landed, maximumSettledTiltSpeed, minimumWheelHeight, up, state };
+    expect(landed, JSON.stringify(metrics)).toBe(true);
+    expect(up.y, JSON.stringify(metrics)).toBeGreaterThan(0.999);
+    expect(maximumSettledTiltSpeed, JSON.stringify(metrics)).toBeLessThan(0.08);
+    expect(minimumWheelHeight, JSON.stringify(metrics)).toBeGreaterThanOrEqual(
+      DEFAULT_CAR_TUNING.wheelRadius - 0.01,
+    );
+  });
+
+  it('drops a two-wheel pitch back onto all four wheels instead of holding a wheelie', async () => {
+    world = await RapierPhysicsWorld.create();
+    createArena(world);
+    const car = new Car(world);
+    const pitch = Math.PI / 12;
+    car.teleport({
+      position: { x: 0, y: 0.62, z: 0 },
+      rotation: { x: Math.sin(pitch * 0.5), y: 0, z: 0, w: Math.cos(pitch * 0.5) },
+    });
+
+    let reachedFourWheels = false;
+    for (let tick = 0; tick < 180; tick += 1) {
+      car.update(world, NEUTRAL_COMMAND, 1 / 120);
+      world.step(1 / 120);
+      reachedFourWheels ||= car.state().wheels.every(({ grounded }) => grounded);
+    }
+
+    const state = car.state();
+    const up = rotateVector(state.transform.rotation, { x: 0, y: 1, z: 0 });
+    const metrics = { reachedFourWheels, up, state };
+    expect(reachedFourWheels, JSON.stringify(metrics)).toBe(true);
+    expect(up.y, JSON.stringify(metrics)).toBeGreaterThan(0.999);
+    expect(Math.hypot(state.angularVelocity.x, state.angularVelocity.z), JSON.stringify(metrics)).toBeLessThan(0.05);
   });
 });
 

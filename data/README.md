@@ -49,3 +49,56 @@ Each successful evaluation also merges its signed policy observations into `data
 Set `BOT_EVALUATION_PERSIST_KNOWLEDGE=false` for candidate comparisons that should write a report without changing shared knowledge. Reports also include grounded reverse time, powerslide time, unstable boost time, failed contact jumps, and jump-contact conversion so inefficient movement cannot hide behind aggregate reward.
 
 Generated match reports are ignored by Git; the compact shared knowledge model is intentionally tracked.
+
+## Evaluation v3
+
+Evaluation v3 separates tactical policy learning from contact-technique learning. The tactical
+policies still decide pressure, rotation, staging, and aerial eligibility. Ground and aerial
+techniques now learn independently from actual contact outcomes, including missed close approaches,
+failed aerials, and whether the outgoing ball trajectory crosses the usable goal mouth.
+
+The v3 report adds `shotOnTargetRate`, `aerialShotOnTargetRate`, `meanShotAlignment`, ground/aerial
+shot counts, `groundBoostBotSeconds`, `aboveDriveTopSpeedBoostBotSeconds`, and the technique values
+and sample counts used by each bot. This fixes the earlier blind spots where a touch counted as
+productive merely because it moved upfield, even if it was headed wide of goal, and where aggregate
+boost time could not show whether bots used boost to exceed normal drive speed on the ground.
+
+Hit strength is tracked separately from direction. `hardTouchRate` requires both at least 8
+units/second of velocity change and at least 14 units/second of outgoing ball speed. The report also
+includes `productiveHardTouchRate`, `meanTouchImpulseSpeed`, and `meanPostTouchBallSpeed`, with the
+same fields split by tactical intent under `touchDiagnostics`. Training rewards combine this impact
+power with useful forward speed, so a weak tap no longer receives the same technique feedback as a
+forceful shot or clear.
+
+`productiveTouchRate` counts one outcome per complete physics contact episode. A touch is productive
+when it increases progress toward the opponent goal or preserves at least 2 units/second of existing
+forward progress; wall bounces, nearby non-contact events, and repeated frames from one collision are
+not separate touches. Evaluation v3 requires at least 80% productive touches.
+
+`alignedApproachConversionRate` is the share of open-play, tactically assigned ground challenges
+that produce a real car-ball collision after the car enters a close, aligned approach. Kickoffs,
+support, cover, and rotation movement are excluded. `defenseHitRate` is stricter: a defensive
+approach only succeeds when its completed contact leaves the ball travelling away from the bot's
+own goal, rather than merely registering a collision.
+
+`aerialAttemptConversionRate` is the share of resolved controller aerial launches that make a real
+car-ball collision. It does not count duplicate jump commands or ordinary recovery/contact jumps
+as new aerial attempts. `aerialAttemptDiagnostics` compares the launch distance, ball height,
+vertical speed, available boost, closest distance, and maximum car height of successful and failed
+launches. Evaluation v3 requires at least 90% ground conversion, 75% aerial conversion, and 80%
+defense conversion.
+
+Use the non-persisting command for before/after comparisons:
+
+```bash
+npm run evaluate:bot-v3
+```
+
+When a candidate is healthy, collect and merge a training generation with:
+
+```bash
+npm run train:bot-v3
+```
+
+The knowledge normalizer migrates schema-v1 tactical data in memory and initializes the new
+schema-v2 technique bands at zero, so existing shared knowledge remains usable during rollout.

@@ -12,7 +12,13 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "E2E_VISUAL=1 playwright test --headed --workers=1",
+    "test:e2e:ui": "E2E_VISUAL=1 playwright test --ui",
     "test:bot-evaluation": "vitest run --config vitest.evaluation.config.ts",
+    "evaluate:bot-v3": "BOT_EVALUATION_LABEL=v3-candidate BOT_EVALUATION_PERSIST_KNOWLEDGE=false vitest run --config vitest.evaluation.config.ts",
+    "train:bot-v3": "BOT_EVALUATION_LABEL=v3-training vitest run --config vitest.evaluation.config.ts",
+    "analyze:bot-evaluations": "node scripts/analyze-bot-evaluations.mjs",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -23,6 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.31.0",
+    "@playwright/test": "^1.61.1",
     "@types/three": "^0.178.1",
     "@types/ws": "^8.18.1",
     "concurrently": "^10.0.3",

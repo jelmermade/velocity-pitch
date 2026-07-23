@@ -43,7 +43,7 @@ describe('bot knowledge file store', () => {
     const knowledge = await new BotKnowledgeFileStore(path).load();
 
     expect(knowledge.generation).toBeGreaterThanOrEqual(0);
-    expect(knowledge.schemaVersion).toBe(1);
+    expect(knowledge.schemaVersion).toBe(2);
   });
 
   it('honors an explicit generation-zero reset instead of bundled history', async () => {

@@ -1,9 +1,14 @@
+import { ARENA_TUNING } from '../core/config/ArenaTuning';
 import { BALL_TUNING } from '../core/config/BallTuning';
+import { DEFAULT_CAR_TUNING } from '../core/config/CarTuning';
 import { distance, dot, length, normalize, sub } from '../core/math/Vector3';
 import { rotateVector } from '../core/math/Quaternion';
 import { BotController } from '../gameplay/bots/BotController';
+import { BotTeamCoordinator, type BotTacticalPlan } from '../gameplay/bots/BotTeamCoordinator';
 import {
   BOT_POLICY_ORDER,
+  BOT_TECHNIQUE_KINDS,
+  BOT_TECHNIQUE_ORDER,
   BUILT_IN_BOT_KNOWLEDGE,
   createEmptyBotKnowledgeObservations,
   mergeBotKnowledge,
@@ -23,11 +28,19 @@ const SUPPORT_MINIMUM_DISTANCE = 8;
 const SUPPORT_MAXIMUM_DISTANCE = 24;
 const KICKOFF_REWARD_TICKS = 60 * 12;
 const GROUND_ATTEMPT_TIMEOUT_TICKS = 60;
-const AERIAL_ATTEMPT_TIMEOUT_TICKS = 120;
+const AERIAL_ATTEMPT_TIMEOUT_TICKS = 150;
+const GROUND_APPROACH_EXIT_DISTANCE = TOUCH_DISTANCE + 3;
+const HARD_HIT_TARGET_IMPULSE_SPEED = 20;
+const HARD_HIT_TARGET_FORWARD_SPEED = 24;
 
 interface ContactAttempt {
   readonly startedTick: number;
   readonly aerial: boolean;
+}
+
+interface GroundApproach {
+  readonly startedTick: number;
+  readonly boosted: boolean;
 }
 
 export class BotTrainingSession implements GameSession {
@@ -37,6 +50,7 @@ export class BotTrainingSession implements GameSession {
   private readonly bots: ReadonlyMap<string, BotController>;
   private readonly lastRewards = new Map<string, number>();
   private readonly contactAttempts = new Map<string, ContactAttempt>();
+  private readonly groundApproaches = new Map<string, GroundApproach>();
   private previousCommands: ReadonlyMap<string, PlayerCommand> = new Map();
   private previousFrame: AuthoritativeFrame | null = null;
   private lastTouchPlayerId: string | null = null;
@@ -53,6 +67,14 @@ export class BotTrainingSession implements GameSession {
   ) {
     this.players = createBotTrainingRoster(random);
     this.localPlayerId = this.players[0]?.id ?? 'bot-azure-0';
+    const coordinators = new Map((['azure', 'coral'] as const).map((team) => [
+      team,
+      new BotTeamCoordinator(
+        team,
+        this.players.filter((player) => player.team === team).map(({ id }) => id),
+        this.players.filter((player) => player.team !== team).map(({ id }) => id),
+      ),
+    ] as const));
     this.bots = new Map(this.players.map((player) => [
       player.id,
       new BotController(
@@ -62,6 +84,7 @@ export class BotTrainingSession implements GameSession {
         true,
         knowledge,
         this.players.filter(({ team }) => team === player.team).map(({ id }) => id),
+        coordinators.get(player.team),
       ),
     ]));
   }
@@ -88,6 +111,10 @@ export class BotTrainingSession implements GameSession {
     return commands;
   }
 
+  isAerialActive(playerId: string): boolean {
+    return this.bots.get(playerId)?.isAerialActive() ?? false;
+  }
+
   trainingState(): BotTrainingState {
     return {
       tick: this.tick,
@@ -104,10 +131,27 @@ export class BotTrainingSession implements GameSession {
           policyValue: learning?.policyValue ?? 0,
           policyValues: learning?.policyValues ?? { balanced: 0, press: 0, rotate: 0 },
           policySamples: learning?.policySamples ?? { balanced: 0, press: 0, rotate: 0 },
+          techniques: learning?.techniques ?? { ground: 'balanced', aerial: 'balanced' },
+          techniqueValues: learning?.techniqueValues ?? {
+            ground: { balanced: 0, safe: 0, aggressive: 0 },
+            aerial: { balanced: 0, safe: 0, aggressive: 0 },
+          },
+          techniqueSamples: learning?.techniqueSamples ?? {
+            ground: { balanced: 0, safe: 0, aggressive: 0 },
+            aerial: { balanced: 0, safe: 0, aggressive: 0 },
+          },
           lastReward: Number((this.lastRewards.get(player.id) ?? 0).toFixed(2)),
         };
       }),
     };
+  }
+
+  tacticalStates(): ReadonlyMap<string, BotTacticalPlan> {
+    return new Map([...this.bots]
+      .flatMap(([playerId, bot]) => {
+        const state = bot.tacticalState();
+        return state ? [[playerId, state] as const] : [];
+      }));
   }
 
   publish(frame: AuthoritativeFrame): void { void frame; }
@@ -137,6 +181,16 @@ export class BotTrainingSession implements GameSession {
           samples: current.samples + next.samples,
         };
       });
+      const techniqueObservations = this.bots.get(player.id)?.techniqueObservations();
+      if (!techniqueObservations) return;
+      BOT_TECHNIQUE_KINDS.forEach((kind) => BOT_TECHNIQUE_ORDER.forEach((technique) => {
+        const current = observations.techniques[kind][technique];
+        const next = techniqueObservations[kind][technique];
+        observations.techniques[kind][technique] = {
+          totalValue: current.totalValue + next.totalValue,
+          samples: current.samples + next.samples,
+        };
+      }));
     });
     return observations;
   }
@@ -146,6 +200,10 @@ export class BotTrainingSession implements GameSession {
     const observationCount = [...this.bots.values()].reduce((total, bot) => (
       total + BOT_POLICY_ORDER.reduce((botTotal, policy) => (
         botTotal + bot.learningObservations()[policy].samples
+      ), 0) + BOT_TECHNIQUE_KINDS.reduce((kindTotal, kind) => (
+        kindTotal + BOT_TECHNIQUE_ORDER.reduce((techniqueTotal, technique) => (
+          techniqueTotal + bot.techniqueObservations()[kind][technique].samples
+        ), 0)
       ), 0)
     ), 0);
     if (observationCount <= this.persistedObservationCount) return;
@@ -166,18 +224,21 @@ export class BotTrainingSession implements GameSession {
       if (isActive(previous) && isActive(frame)) {
         this.rewardBallProgress(previous, frame, rewards);
         this.rewardApproach(previous, frame, rewards);
+        this.rewardEfficientGroundBoost(previous, frame, rewards);
         this.rewardPositioning(frame, rewards);
         this.rewardAerialPlay(previous, frame, rewards);
         this.penalizeRecoveryDowntime(frame, rewards);
         this.penalizeReverseDriving(frame, rewards);
         this.rewardTouch(previous, frame, rewards);
         this.resolveMissedContactAttempts(frame, tick, rewards);
+        this.resolveMissedGroundApproaches(frame, rewards);
       }
     }
     if (frame.snapshot.match.phase === 'countdown') {
       this.lastTouchPlayerId = null;
       this.lastTouchWasAerial = false;
       this.contactAttempts.clear();
+      this.groundApproaches.clear();
     }
     if (frame.snapshot.match.phase === 'ended') {
       this.lastRewards.clear();
@@ -261,6 +322,52 @@ export class BotTrainingSession implements GameSession {
     }
   }
 
+  private rewardEfficientGroundBoost(
+    previous: AuthoritativeFrame,
+    current: AuthoritativeFrame,
+    rewards: Map<string, number>,
+  ): void {
+    const ball = current.snapshot.ball.transform.position;
+    this.previousCommands.forEach((command, playerId) => {
+      if (!command.boost) return;
+      const beforeCar = previous.cars[playerId];
+      const afterCar = current.cars[playerId];
+      if (!beforeCar?.grounded || !afterCar?.grounded || !afterCar.boosting) return;
+      const plan = this.bots.get(playerId)?.tacticalState();
+      const pursuingPlay = plan?.intent === 'challenge' || plan?.intent === 'fake-challenge';
+      if (!pursuingPlay) return;
+
+      const beforeDistance = distance(
+        beforeCar.transform.position,
+        previous.snapshot.ball.transform.position,
+      );
+      const afterDistance = distance(afterCar.transform.position, ball);
+      const distanceGain = beforeDistance - afterDistance;
+      const toBall = normalize(sub(ball, afterCar.transform.position));
+      const closingSpeed = dot(afterCar.linearVelocity, toBall);
+      if (distanceGain <= 0 || closingSpeed <= 0) {
+        addReward(rewards, playerId, -0.012);
+        return;
+      }
+
+      const boostedSpeedFraction = clamp(
+        (closingSpeed - DEFAULT_CAR_TUNING.maximumGroundDriveSpeed)
+          / Math.max(
+            0.1,
+            DEFAULT_CAR_TUNING.maximumGroundBoostSpeed
+              - DEFAULT_CAR_TUNING.maximumGroundDriveSpeed,
+          ),
+        0,
+        1,
+      );
+      addReward(
+        rewards,
+        playerId,
+        0.001 + clamp(distanceGain, 0, 0.5) * 0.012 + boostedSpeedFraction * 0.004,
+      );
+    });
+  }
+
   private rewardPositioning(frame: AuthoritativeFrame, rewards: Map<string, number>): void {
     const ball = frame.snapshot.ball.transform.position;
     for (const team of ['azure', 'coral'] as const) {
@@ -342,7 +449,9 @@ export class BotTrainingSession implements GameSession {
     if (!toucher || toucher.distance > TOUCH_DISTANCE) return;
     this.lastTouchPlayerId = toucher.id;
     const toucherCar = current.cars[toucher.id];
+    const groundApproach = this.groundApproaches.get(toucher.id);
     this.contactAttempts.delete(toucher.id);
+    this.groundApproaches.delete(toucher.id);
     this.lastTouchWasAerial = Boolean(
       toucherCar
       && !toucherCar.grounded
@@ -351,15 +460,33 @@ export class BotTrainingSession implements GameSession {
     const beforeProgress = previous.snapshot.ball.linearVelocity.z * attackDirection(toucher.team);
     const afterProgress = current.snapshot.ball.linearVelocity.z * attackDirection(toucher.team);
     const improvement = afterProgress - beforeProgress;
+    const impactPower = clamp(velocityChange / HARD_HIT_TARGET_IMPULSE_SPEED, 0, 1);
+    const directedPower = clamp(afterProgress / HARD_HIT_TARGET_FORWARD_SPEED, 0, 1);
+    const hardHitQuality = improvement > 0
+      ? impactPower * 0.4 + directedPower * 0.6
+      : -impactPower;
     addReward(
       rewards,
       toucher.id,
       improvement > 0 ? 3 + Math.min(6, improvement * 0.4) : -3 - Math.min(7, Math.abs(improvement) * 0.4),
     );
+    addReward(rewards, toucher.id, hardHitQuality * 6);
+    if (groundApproach?.boosted) {
+      addReward(rewards, toucher.id, hardHitQuality >= 0.45 ? 1 + hardHitQuality * 3 : -1);
+    }
     if (beforeProgress < -2 && afterProgress > 1) {
       addReward(rewards, toucher.id, botRole(toucher) === 'defender' ? 12 : 7);
     }
     if (this.lastTouchWasAerial) addReward(rewards, toucher.id, improvement > 0 ? 12 : -8);
+    const techniqueQuality = clamp(
+      shotTrajectoryQuality(current, toucher.team) * 0.4 + hardHitQuality * 0.6,
+      -1,
+      1,
+    );
+    this.bots.get(toucher.id)?.rewardTechnique(
+      this.lastTouchWasAerial ? 'aerial' : 'ground',
+      techniqueQuality,
+    );
   }
 
   private trackContactAttempts(
@@ -379,6 +506,7 @@ export class BotTrainingSession implements GameSession {
         aerial: frame.snapshot.ball.transform.position.y >= AERIAL_BALL_HEIGHT,
       });
     });
+    this.trackGroundApproaches(frame);
   }
 
   private resolveMissedContactAttempts(
@@ -393,7 +521,52 @@ export class BotTrainingSession implements GameSession {
       const landedWithoutContact = age > 12 && car?.grounded;
       if (!landedWithoutContact && age < timeout) return;
       addReward(rewards, playerId, attempt.aerial ? -4 : -1.5);
+      this.bots.get(playerId)?.rewardTechnique(attempt.aerial ? 'aerial' : 'ground', -1);
       this.contactAttempts.delete(playerId);
+    });
+  }
+
+  private trackGroundApproaches(frame: AuthoritativeFrame): void {
+    const ball = frame.snapshot.ball.transform.position;
+    if (ball.y >= AERIAL_BALL_HEIGHT) return;
+    this.players.forEach((player) => {
+      if (this.groundApproaches.has(player.id)) return;
+      const car = frame.cars[player.id];
+      if (!car?.grounded) return;
+      const forward = rotateVector(car.transform.rotation, { x: 0, y: 0, z: -1 });
+      const toBall = normalize({
+        x: ball.x - car.transform.position.x,
+        y: 0,
+        z: ball.z - car.transform.position.z,
+      });
+      if (distance(car.transform.position, ball) <= TOUCH_DISTANCE + 0.9 && dot(forward, toBall) > 0.72) {
+        const speed = Math.hypot(car.linearVelocity.x, car.linearVelocity.z);
+        this.groundApproaches.set(player.id, {
+          startedTick: frame.snapshot.tick,
+          boosted: car.boosting || speed > DEFAULT_CAR_TUNING.maximumGroundDriveSpeed + 0.5,
+        });
+      }
+    });
+  }
+
+  private resolveMissedGroundApproaches(
+    frame: AuthoritativeFrame,
+    rewards: Map<string, number>,
+  ): void {
+    const ball = frame.snapshot.ball.transform.position;
+    this.groundApproaches.forEach((approach, playerId) => {
+      const car = frame.cars[playerId];
+      if (!car) {
+        this.groundApproaches.delete(playerId);
+        return;
+      }
+      if (
+        frame.snapshot.tick - approach.startedTick <= 5
+        || distance(car.transform.position, ball) <= GROUND_APPROACH_EXIT_DISTANCE
+      ) return;
+      if (approach.boosted) addReward(rewards, playerId, -2.5);
+      this.bots.get(playerId)?.rewardTechnique('ground', -1);
+      this.groundApproaches.delete(playerId);
     });
   }
 }
@@ -431,3 +604,31 @@ const clamp = (value: number, minimum: number, maximum: number): number => (
 );
 
 const tickWithin = (tick: number, untilTick: number): boolean => untilTick >= 0 && tick <= untilTick;
+
+const shotTrajectoryQuality = (frame: AuthoritativeFrame, team: TeamId): number => {
+  const ball = frame.snapshot.ball;
+  const goal = GOALS.find(({ teamScored }) => teamScored === team);
+  if (!goal) return -1;
+  const goalDistance = goal.center.z - ball.transform.position.z;
+  const velocity = ball.linearVelocity;
+  if (velocity.z * goalDistance <= 0.1) return -1;
+  const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
+  if (horizontalSpeed <= 0.1) return -1;
+  const toGoal = normalize({
+    x: goal.center.x - ball.transform.position.x,
+    y: 0,
+    z: goalDistance,
+  });
+  const alignment = (velocity.x * toGoal.x + velocity.z * toGoal.z) / horizontalSpeed;
+  const seconds = goalDistance / velocity.z;
+  if (seconds > 0 && seconds <= 8) {
+    const crossingX = ball.transform.position.x + velocity.x * seconds;
+    const usableHalfWidth = Math.max(1, ARENA_TUNING.goalHalfWidth - BALL_TUNING.radius - 0.5);
+    const crossingQuality = 1 - Math.abs(crossingX) / usableHalfWidth;
+    if (crossingQuality >= 0) return 0.75 + crossingQuality * 0.25;
+  }
+  // A centered midfield hit is useful even when it cannot reach the goal within the
+  // shot window. Preserve goal-mouth hits as the maximum reward while giving learning
+  // a directional gradient instead of collapsing every short shot to -1.
+  return clamp(alignment * 1.25 - 0.5, -1, 0.75);
+};

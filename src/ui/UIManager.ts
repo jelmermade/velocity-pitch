@@ -401,4 +401,7 @@ const trainingPanelMarkup = (players: readonly LobbyPlayer[]): string => `
             </div>`).join('')}
         </section>`).join('')}
     </div>
+    <p class="bot-training-panel__debug-legend" data-bot-debug-legend>
+      <span>TEAM ARROWS // BOT TARGETS</span><span>OUTLINES // HITBOX GUIDES</span><span>BALL DASH // 3 SEC PATH</span>
+    </p>
   </aside>`;

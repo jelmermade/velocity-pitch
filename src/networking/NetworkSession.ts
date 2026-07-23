@@ -1,6 +1,7 @@
 import { NEUTRAL_COMMAND, type PlayerCommand } from '../input/PlayerCommand';
 import { RUNTIME_CONFIG } from '../app/RuntimeConfig';
 import { BotController } from '../gameplay/bots/BotController';
+import { BotTeamCoordinator } from '../gameplay/bots/BotTeamCoordinator';
 import { BUILT_IN_BOT_KNOWLEDGE, type BotKnowledge } from '../gameplay/bots/BotKnowledge';
 import { botRole } from '../gameplay/bots/BotRoster';
 import type { GameSession } from './GameSession';
@@ -24,6 +25,14 @@ export class NetworkSession implements GameSession {
     this.localPlayerId = lobby.playerId;
     this.players = lobby.players;
     this.authoritative = lobby.playerId === lobby.hostId;
+    const coordinators = new Map((['azure', 'coral'] as const).map((team) => [
+      team,
+      new BotTeamCoordinator(
+        team,
+        this.players.filter((player) => player.team === team).map(({ id }) => id),
+        this.players.filter((player) => player.team !== team).map(({ id }) => id),
+      ),
+    ] as const));
     this.bots = new Map(this.authoritative
       ? this.players.filter((player) => player.bot).map((player) => [
           player.id,
@@ -34,6 +43,7 @@ export class NetworkSession implements GameSession {
             false,
             knowledge,
             this.players.filter(({ team }) => team === player.team).map(({ id }) => id),
+            coordinators.get(player.team),
           ),
         ])
       : []);

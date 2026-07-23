@@ -26,6 +26,7 @@ import { RUNTIME_CONFIG } from './RuntimeConfig';
 import { FreePlaySession } from '../networking/FreePlaySession';
 import type { GameMode } from './GameMode';
 import { VEHICLE_CONFIG, type GameplayConfig } from '../core/config/GameplayScale';
+import { installE2ETestApi } from './E2ETestApi';
 
 export class GameApplication {
   private constructor(
@@ -39,6 +40,7 @@ export class GameApplication {
     private readonly session: GameSession,
     private readonly events: EventBus<GameEventMap>,
     private readonly unsubscribeSessionError: (() => void) | null,
+    private readonly disposeE2ETestApi: (() => void) | null,
   ) {}
 
   static async create(
@@ -145,7 +147,15 @@ export class GameApplication {
         } : {}),
       },
     );
-    const renderer = new GameRenderer(ui.renderContainer(), events, session.players, session.localPlayerId);
+    const botMatchDebugEnabled = training
+      || (startedLobby === null && !practice && matchSettings.teamSize === 3);
+    const renderer = new GameRenderer(
+      ui.renderContainer(),
+      events,
+      session.players,
+      session.localPlayerId,
+      botMatchDebugEnabled,
+    );
     const camera = new CameraController(renderer.camera, world, input, events);
     const audio = new AudioManager(events);
     runtime.renderer = renderer;
@@ -167,6 +177,7 @@ export class GameApplication {
     let endedSeconds = 0;
     let finishMatchSent = false;
     let trainingFocusPlayerId = session.localPlayerId;
+    let e2eFocusPlayerId: string | null = null;
     const loop = new GameLoop(
       (deltaSeconds) => {
         const localCommand = input.sample();
@@ -229,14 +240,14 @@ export class GameApplication {
         const victoryLineup = ended ? createVictoryLineup(session.players, winningTeam) : null;
         const focusPlayerId = ended
           ? victoryLineup?.keys().next().value
-          : training ? trainingFocusPlayerId : session.localPlayerId;
+          : e2eFocusPlayerId ?? (training ? trainingFocusPlayerId : session.localPlayerId);
         const localCar = networkFrame?.cars[focusPlayerId ?? session.localPlayerId];
         const snapshot = localCar ? { ...baseSnapshot, car: localCar } : baseSnapshot;
         const renderedCars = ended && networkFrame && victoryLineup
           ? selectVictoryCars(networkFrame.cars, victoryLineup)
           : networkFrame?.cars;
         audio.update(snapshot.car, deltaSeconds, snapshot.match.paused);
-        renderer.update(snapshot, renderedCars, deltaSeconds);
+        renderer.update(snapshot, renderedCars, deltaSeconds, session.tacticalStates?.());
         camera.update(snapshot, deltaSeconds);
         ui.update(snapshot, camera.modeName());
         ui.updateTraining(trainingState, training ? trainingFocusPlayerId : null);
@@ -255,6 +266,13 @@ export class GameApplication {
       startedLobby.client.onReturnedToLobby(onReturnToLobby),
     ] : [];
     const unsubscribeSessionError = (): void => sessionUnsubscribes.forEach((unsubscribe) => unsubscribe());
+    const disposeE2ETestApi = installE2ETestApi(
+      simulation,
+      session,
+      input,
+      loop,
+      (playerId) => { e2eFocusPlayerId = playerId; },
+    );
     return new GameApplication(
       loop,
       simulation,
@@ -266,6 +284,7 @@ export class GameApplication {
       session,
       events,
       unsubscribeSessionError,
+      disposeE2ETestApi,
     );
   }
 
@@ -274,6 +293,7 @@ export class GameApplication {
   dispose(disconnect = true): void {
     this.loop.stop();
     this.unsubscribeSessionError?.();
+    this.disposeE2ETestApi?.();
     if (disconnect) this.session.dispose();
     this.camera.dispose();
     this.audio.dispose();

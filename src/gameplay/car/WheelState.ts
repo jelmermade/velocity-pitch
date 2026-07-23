@@ -1,12 +1,13 @@
 import type { Vec3 } from '../../core/math/Vector3';
 
 export const WHEEL_BASE = 2.1;
+export const WHEEL_MOUNT_Y = -0.2;
 
 export const WHEEL_CONNECTIONS: readonly Vec3[] = Object.freeze([
-  { x: -0.92, y: -0.2, z: -WHEEL_BASE * 0.5 },
-  { x: 0.92, y: -0.2, z: -WHEEL_BASE * 0.5 },
-  { x: -0.92, y: -0.2, z: WHEEL_BASE * 0.5 },
-  { x: 0.92, y: -0.2, z: WHEEL_BASE * 0.5 },
+  { x: -0.92, y: WHEEL_MOUNT_Y, z: -WHEEL_BASE * 0.5 },
+  { x: 0.92, y: WHEEL_MOUNT_Y, z: -WHEEL_BASE * 0.5 },
+  { x: -0.92, y: WHEEL_MOUNT_Y, z: WHEEL_BASE * 0.5 },
+  { x: 0.92, y: WHEEL_MOUNT_Y, z: WHEEL_BASE * 0.5 },
 ]);
 
 export interface WheelState {

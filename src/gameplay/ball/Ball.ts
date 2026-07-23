@@ -37,12 +37,20 @@ export class Ball {
     this.body.setLinearVelocity(add(previousVelocity, scale(sub(currentVelocity, previousVelocity), multiplier)));
   }
 
-  reset(): void {
-    this.body.setPosition(BALL_SPAWN);
+  bodyHandle(): number { return this.body.handle; }
+
+  teleport(position: Vec3, linearVelocity: Vec3 = { x: 0, y: 0, z: 0 }): void {
+    this.body.setPosition(position);
     this.body.setRotation(IDENTITY_QUAT);
-    this.body.setLinearVelocity({ x: 0, y: 0, z: 0 });
+    this.body.setLinearVelocity(linearVelocity);
     this.body.setAngularVelocity({ x: 0, y: 0, z: 0 });
+    this.body.clearForces();
+    this.body.clearTorques();
     this.body.wakeUp();
+  }
+
+  reset(): void {
+    this.teleport(BALL_SPAWN);
   }
 
 }

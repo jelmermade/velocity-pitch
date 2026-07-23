@@ -1,7 +1,7 @@
 import type { CarTuning } from '../../core/config/CarTuning';
 import { ARENA_TUNING } from '../../core/config/ArenaTuning';
 import { clamp } from '../../core/math/MathUtils';
-import { rotateVector, type Quat } from '../../core/math/Quaternion';
+import { rotateVector, slerpQuat, type Quat } from '../../core/math/Quaternion';
 import { add, cross, dot, length, normalize, scale, sub, UP, type Vec3 } from '../../core/math/Vector3';
 import type { PlayerCommand } from '../../input/PlayerCommand';
 import type { PhysicsBody } from '../../physics/PhysicsBody';
@@ -11,12 +11,14 @@ import { DodgeSystem } from './DodgeSystem';
 import { WheelContactSystem } from './WheelContactSystem';
 import { RecoverySystem } from './RecoverySystem';
 import type { WheelState } from './WheelState';
+import type { CarSurfaceDebug } from './CarState';
 
 export interface CarControlResult {
   readonly grounded: boolean;
   readonly wheels: readonly WheelState[];
   readonly boost: number;
   readonly boosting: boolean;
+  readonly surfaceDebug: CarSurfaceDebug;
 }
 
 export class CarController {
@@ -25,7 +27,7 @@ export class CarController {
   private readonly boost = new BoostSystem();
   private readonly recovery = new RecoverySystem();
   private ceilingRecoveryRemaining = 0;
-  private surfaceSteeringSpeed = 0;
+  private debugTransitionPhase: 'none' | 'before' | 'curve' | 'wall' = 'none';
 
   constructor(private tuning: CarTuning) {}
 
@@ -42,6 +44,10 @@ export class CarController {
       right: rotateVector(rotation, { x: 1, y: 0, z: 0 }),
     };
     const wheelContact = this.wheelContact.update(world, body, command, axes, this.tuning, deltaSeconds);
+    const detachingFromSurface = command.jumpPressed
+      && wheelContact.grounded
+      && wheelContact.surfaceNormal !== null
+      && wheelContact.surfaceNormal.y < 0.95;
     const recovering = this.recovery.update(world, body, command, axes, this.tuning, deltaSeconds);
     const dodge = recovering
       ? { controlLocked: false, rotationLocked: false, autoLeveling: false }
@@ -57,26 +63,28 @@ export class CarController {
     if (touchingCeiling) {
       this.ceilingRecoveryRemaining = this.tuning.ceilingRecoverySeconds;
       const velocity = body.linearVelocity();
-      if (velocity.y > 0) {
-        body.setLinearVelocity({
-          x: velocity.x,
-          y: -Math.max(this.tuning.minimumCeilingFallSpeed, velocity.y * this.tuning.ceilingBounceFactor),
-          z: velocity.z,
-        });
-      }
+      const ceilingFallSpeed = Math.max(
+        this.tuning.minimumCeilingFallSpeed,
+        Math.max(0, velocity.y) * this.tuning.ceilingBounceFactor,
+      );
+      body.setLinearVelocity({
+        x: velocity.x,
+        y: Math.min(velocity.y, -ceilingFallSpeed),
+        z: velocity.z,
+      });
     } else {
       this.ceilingRecoveryRemaining = Math.max(0, this.ceilingRecoveryRemaining - deltaSeconds);
     }
 
-    const forwardSpeed = dot(body.linearVelocity(), axes.forward);
-    let appliedSurfaceSteering = false;
+    const forwardSpeed = dot(body.linearVelocity(), wheelContact.projectedForward);
     if (wheelContact.grounded && Math.abs(forwardSpeed) > 0.35) {
       const requestedDirection = Math.sign(command.throttle);
       const travelDirection = Math.abs(forwardSpeed) > this.tuning.brakeToReverseSpeed
         || requestedDirection === 0
         ? Math.sign(forwardSpeed)
         : requestedDirection;
-      const yawSpeed = dot(body.angularVelocity(), axes.up);
+      const steeringAxis = wheelContact.surfaceNormal ?? axes.up;
+      const yawSpeed = dot(body.angularVelocity(), steeringAxis);
       const steeringTorque = command.powerslide
         ? -command.steer
           * travelDirection
@@ -89,11 +97,10 @@ export class CarController {
             this.tuning.groundSteeringTorque,
           );
       const steeringImpulse = steeringTorque * deltaSeconds;
-      body.applyTorqueImpulse(scale(axes.up, steeringImpulse));
+      body.applyTorqueImpulse(scale(steeringAxis, steeringImpulse));
 
       const surfaceNormal = wheelContact.surfaceNormal;
       if (surfaceNormal && surfaceNormal.y < 0.999_95 && !command.powerslide && Math.abs(command.steer) >= 0.01) {
-        appliedSurfaceSteering = true;
         const slopeFactor = clamp((1 - surfaceNormal.y) / 0.3, 0, 1);
         const targetSurfaceYaw = -command.steer
           * travelDirection
@@ -110,44 +117,71 @@ export class CarController {
           scale(tangentVelocity, Math.cos(turnAngle)),
           scale(cross(surfaceNormal, tangentVelocity), Math.sin(turnAngle)),
         );
-        this.surfaceSteeringSpeed = Math.max(this.surfaceSteeringSpeed, length(tangentVelocity));
         const turnedTangentVelocity = scale(
           normalize(rotatedTangentVelocity),
-          this.surfaceSteeringSpeed,
+          length(tangentVelocity),
         );
         body.setLinearVelocity(add(normalVelocity, turnedTangentVelocity));
 
-        const travelForward = scale(normalize(turnedTangentVelocity), travelDirection);
-        body.setRotation(this.surfaceRotation(travelForward, surfaceNormal));
-        body.setAngularVelocity({ x: 0, y: 0, z: 0 });
       }
     }
-    if (!appliedSurfaceSteering) this.surfaceSteeringSpeed = 0;
     const stableSurfaceNormal = wheelContact.surfaceNormal;
+    const allWheelsGrounded = wheelContact.wheels.every(({ grounded }) => grounded);
+    const flatWheelContacts = wheelContact.wheels.filter(({ grounded }) => grounded).length;
     if (
       wheelContact.grounded
       && stableSurfaceNormal
       && stableSurfaceNormal.y < 0.1
       && !command.powerslide
       && Math.abs(command.steer) < 0.01
+      && !detachingFromSurface
     ) {
-      const surfaceForward = normalize(sub(
-        axes.forward,
-        scale(stableSurfaceNormal, dot(axes.forward, stableSurfaceNormal)),
-      ));
-      if (length(surfaceForward) > 0.5) {
-        body.setRotation(this.surfaceRotation(surfaceForward, stableSurfaceNormal));
-      }
       const velocity = body.linearVelocity();
-      const awayFromSurfaceSpeed = dot(velocity, stableSurfaceNormal);
-      if (awayFromSurfaceSpeed > 0) {
-        body.setLinearVelocity(sub(velocity, scale(stableSurfaceNormal, awayFromSurfaceSpeed)));
-      }
-      const angularVelocity = body.angularVelocity();
-      body.setAngularVelocity(scale(
-        stableSurfaceNormal,
-        dot(angularVelocity, stableSurfaceNormal),
+      body.setLinearVelocity(sub(
+        velocity,
+        scale(stableSurfaceNormal, dot(velocity, stableSurfaceNormal)),
       ));
+    }
+    const acceptingFlatSupport = !command.jumpPressed && !command.jumpHeld;
+    const bodyPosition = body.position();
+    const bodyVelocity = body.linearVelocity();
+    const flatTangentSpeed = stableSurfaceNormal
+      ? length(sub(bodyVelocity, scale(stableSurfaceNormal, dot(bodyVelocity, stableSurfaceNormal))))
+      : length(bodyVelocity);
+    const stableFourWheelLanding = acceptingFlatSupport
+      && allWheelsGrounded
+      && stableSurfaceNormal !== null
+      && dot(axes.up, stableSurfaceNormal) > 0.75
+      // Directly rotating a fast chassis while its colliders are touching the floor can
+      // introduce deep contact penetration before Rapier's next solver step. At speed,
+      // angular damping settles the car without teleporting its orientation.
+      && (stableSurfaceNormal.y < 0.999_95 || flatTangentSpeed < 8);
+    const insideFlatInterior = Math.abs(bodyPosition.x) < (
+      ARENA_TUNING.halfWidth - ARENA_TUNING.floorWallCurveRadius - 2
+    ) && Math.abs(bodyPosition.z) < (
+      ARENA_TUNING.halfLength - ARENA_TUNING.floorWallCurveRadius - 2
+    );
+    const stableFlatSupport = acceptingFlatSupport
+      && flatWheelContacts >= 2
+      && stableSurfaceNormal !== null
+      && stableSurfaceNormal.y >= 0.999_95
+      && dot(axes.up, stableSurfaceNormal) > 0.75
+      && flatTangentSpeed < 8
+      && insideFlatInterior;
+    if (
+      wheelContact.grounded
+      && stableSurfaceNormal
+      && (stableSurfaceNormal.y < 0.999_95 || stableFourWheelLanding || stableFlatSupport)
+      && !command.powerslide
+      && !detachingFromSurface
+    ) {
+      this.alignToSurface(
+        body,
+        stableSurfaceNormal,
+        wheelContact.projectedForward,
+        stableSurfaceNormal.y >= 0.999_95 ? 0 : command.steer,
+        deltaSeconds,
+      );
     }
     const onFlatSurface = wheelContact.surfaceNormal !== null
       && wheelContact.surfaceNormal.y >= 0.999_95;
@@ -237,7 +271,51 @@ export class CarController {
       if (dodge.autoLeveling) this.applyDodgeAutoLevel(body, axes.up, deltaSeconds);
     }
 
-    return { grounded: wheelContact.grounded, wheels: wheelContact.wheels, boost: this.boost.value(), boosting };
+    if (wheelContact.grounded && wheelContact.surfaceNormal) {
+      const maximumSurfaceSpeed = this.tuning.maximumGroundBoostSpeed + 2;
+      const velocity = body.linearVelocity();
+      const normalVelocity = scale(
+        wheelContact.surfaceNormal,
+        dot(velocity, wheelContact.surfaceNormal),
+      );
+      const tangentVelocity = sub(velocity, normalVelocity);
+      const tangentSpeed = length(tangentVelocity);
+      if (tangentSpeed > maximumSurfaceSpeed) {
+        body.setLinearVelocity(add(
+          normalVelocity,
+          scale(tangentVelocity, maximumSurfaceSpeed / tangentSpeed),
+        ));
+      }
+    }
+
+    // Impacts can combine pitch, yaw, and roll beyond the angular envelope that vehicle
+    // controls can produce. Besides looking like uncontrolled wobble, sufficiently large
+    // combined spin destabilizes Rapier's rounded car contacts in long-running matches.
+    const angularVelocity = body.angularVelocity();
+    const angularSpeed = length(angularVelocity);
+    const maximumAngularSpeed = this.tuning.maximumAerialAngularSpeed + 0.25;
+    if (angularSpeed > maximumAngularSpeed) {
+      body.setAngularVelocity(scale(angularVelocity, maximumAngularSpeed / angularSpeed));
+    }
+
+    const surfaceDebug: CarSurfaceDebug = {
+      ...wheelContact.debug,
+      velocity: body.linearVelocity(),
+      tangentVelocity: wheelContact.surfaceNormal
+        ? sub(
+            body.linearVelocity(),
+            scale(wheelContact.surfaceNormal, dot(body.linearVelocity(), wheelContact.surfaceNormal)),
+          )
+        : body.linearVelocity(),
+    };
+    this.logWallTransition(body, surfaceDebug);
+    return {
+      grounded: wheelContact.grounded,
+      wheels: wheelContact.wheels,
+      boost: this.boost.value(),
+      boosting,
+      surfaceDebug,
+    };
   }
 
   reset(): void {
@@ -246,7 +324,7 @@ export class CarController {
     this.recovery.reset();
     this.wheelContact.reset();
     this.ceilingRecoveryRemaining = 0;
-    this.surfaceSteeringSpeed = 0;
+    this.debugTransitionPhase = 'none';
   }
 
   addBoost(amount: number): number {
@@ -319,6 +397,66 @@ export class CarController {
       z: scale * 0.25,
       w: (m10 - m01) / scale,
     };
+  }
+
+  private alignToSurface(
+    body: PhysicsBody,
+    surfaceNormal: Vec3,
+    projectedForward: Vec3,
+    steering: number,
+    deltaSeconds: number,
+  ): void {
+    const velocity = body.linearVelocity();
+    const tangentVelocity = sub(velocity, scale(surfaceNormal, dot(velocity, surfaceNormal)));
+    const surfaceSpeed = dot(tangentVelocity, projectedForward);
+    const heading = Math.abs(steering) >= 0.01 && length(tangentVelocity) > 0.35
+      ? scale(normalize(tangentVelocity), Math.sign(surfaceSpeed) || 1)
+      : projectedForward;
+    if (length(heading) < 0.5) return;
+
+    const targetRotation = this.surfaceRotation(heading, surfaceNormal);
+    const alignmentRate = Math.abs(steering) >= 0.01
+      ? this.tuning.surfaceSteeringAlignmentRate
+      : this.tuning.surfaceAlignmentRate;
+    const interpolation = 1 - Math.exp(-alignmentRate * deltaSeconds);
+    body.setRotation(slerpQuat(body.rotation(), targetRotation, interpolation));
+
+    const angularVelocity = body.angularVelocity();
+    const surfaceYaw = scale(surfaceNormal, dot(angularVelocity, surfaceNormal));
+    const tiltVelocity = sub(angularVelocity, surfaceYaw);
+    const damping = Math.exp(-this.tuning.surfaceAngularDamping * deltaSeconds);
+    body.setAngularVelocity(add(surfaceYaw, scale(tiltVelocity, damping)));
+  }
+
+  private logWallTransition(body: PhysicsBody, debug: CarSurfaceDebug): void {
+    if (
+      typeof window === 'undefined'
+      || new URLSearchParams(window.location.search).get('vehicleDebug') !== '1'
+      || !debug.surfaceNormal
+    ) return;
+    const position = body.position();
+    const boundaryInset = Math.min(
+      ARENA_TUNING.halfWidth - Math.abs(position.x),
+      ARENA_TUNING.halfLength - Math.abs(position.z),
+    );
+    let phase: typeof this.debugTransitionPhase = 'none';
+    if (debug.surfaceNormal.y >= 0.98 && boundaryInset <= ARENA_TUNING.floorWallCurveRadius + 2) {
+      phase = 'before';
+    } else if (debug.surfaceNormal.y > 0.08 && debug.surfaceNormal.y < 0.92) {
+      phase = 'curve';
+    } else if (debug.surfaceNormal.y <= 0.02) {
+      phase = 'wall';
+    }
+    if (phase === 'none' || phase === this.debugTransitionPhase) return;
+    this.debugTransitionPhase = phase;
+    console.debug('[vehicle-wall-transition]', {
+      phase,
+      speed: length(debug.velocity),
+      tangentSpeed: length(debug.tangentVelocity),
+      grounded: debug.grounded,
+      adhesionForce: length(debug.adhesionForce),
+      throttleForce: length(debug.throttleForce),
+    });
   }
 
   private applyDodgeAutoLevel(body: PhysicsBody, carUp: typeof UP, deltaSeconds: number): void {

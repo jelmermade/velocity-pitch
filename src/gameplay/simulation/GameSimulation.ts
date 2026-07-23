@@ -24,6 +24,7 @@ import { createVictoryLineup, VICTORY_ROTATION } from '../match/VictoryLineup';
 import { GoalReplayBuffer } from '../replay/GoalReplayBuffer';
 import { interpolateCarState, interpolateSnapshots } from './SnapshotInterpolator';
 import type { DemolitionSnapshot, SimulationSnapshot } from './SimulationSnapshot';
+import type { Transform } from '../../core/types/Transform';
 
 export class GameSimulation {
   private readonly cars = new Map<string, Car>();
@@ -166,6 +167,49 @@ export class GameSimulation {
       boostRechargePerSecond: config.boostRechargePerSecond,
     }, config);
     this.cars.forEach((car) => car.setTuning(this.carTuning));
+  }
+
+  stageLocalCar(
+    transform: Transform,
+    linearVelocity: Vec3,
+    angularVelocity: Vec3,
+    resetCar = true,
+  ): void {
+    this.stageCar(this.localPlayerId, transform, linearVelocity, angularVelocity, resetCar);
+  }
+
+  stageCar(
+    playerId: string,
+    transform: Transform,
+    linearVelocity: Vec3,
+    angularVelocity: Vec3,
+    resetCar = true,
+  ): void {
+    const car = this.cars.get(playerId);
+    if (!car) throw new Error(`Car ${playerId} is unavailable`);
+    if (resetCar) car.reset();
+    car.teleport(transform, linearVelocity, angularVelocity);
+    this.synchronizeStagedActors();
+  }
+
+  stageBall(position: Vec3, linearVelocity: Vec3): void {
+    this.ball.teleport(position, linearVelocity);
+    this.synchronizeStagedActors();
+  }
+
+  ballContactPlayerIds(): readonly string[] {
+    const ballBodyHandle = this.ball.bodyHandle();
+    return [...this.cars]
+      .filter(([, car]) => car.contactingBodyHandles(this.world).includes(ballBodyHandle))
+      .map(([playerId]) => playerId);
+  }
+
+  private synchronizeStagedActors(): void {
+    this.world.synchronizeSceneQueries();
+    this.current = this.capture();
+    this.previous = this.current;
+    this.currentCars = this.captureCars();
+    this.previousCars = this.currentCars;
   }
 
   dispose(): void {

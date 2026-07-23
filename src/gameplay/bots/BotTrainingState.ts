@@ -1,5 +1,6 @@
 import type { TeamId } from '../../networking/LobbyProtocol';
 import type { BotPolicy, BotRole } from './BotController';
+import type { BotTechnique, BotTechniqueKind } from './BotKnowledge';
 
 export interface BotTrainingEntry {
   readonly playerId: string;
@@ -11,6 +12,13 @@ export interface BotTrainingEntry {
   readonly policyValue: number;
   readonly policyValues: Readonly<Record<BotPolicy, number>>;
   readonly policySamples: Readonly<Record<BotPolicy, number>>;
+  readonly techniques?: Readonly<Record<BotTechniqueKind, BotTechnique>>;
+  readonly techniqueValues?: Readonly<
+    Record<BotTechniqueKind, Readonly<Record<BotTechnique, number>>>
+  >;
+  readonly techniqueSamples?: Readonly<
+    Record<BotTechniqueKind, Readonly<Record<BotTechnique, number>>>
+  >;
   readonly lastReward: number;
 }
 

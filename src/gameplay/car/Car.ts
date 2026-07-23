@@ -6,8 +6,8 @@ import { NEUTRAL_COMMAND, type PlayerCommand } from '../../input/PlayerCommand';
 import type { Transform } from '../../core/types/Transform';
 import { ZERO, type Vec3 } from '../../core/math/Vector3';
 import { CarController } from './CarController';
-import type { CarState } from './CarState';
-import { WHEEL_CONNECTIONS } from './WheelState';
+import type { CarState, CarSurfaceDebug } from './CarState';
+import { WHEEL_CONNECTIONS, WHEEL_MOUNT_Y } from './WheelState';
 
 export interface CarSpawn {
   readonly position: Vec3;
@@ -22,7 +22,7 @@ export class Car {
   private readonly body: PhysicsBody;
   private readonly controller: CarController;
   private readonly initialWheels;
-  private controlState: Pick<CarState, 'wheels' | 'grounded' | 'boost' | 'boosting'>;
+  private controlState: Pick<CarState, 'wheels' | 'grounded' | 'boost' | 'boosting' | 'surfaceDebug'>;
   private respawnSecondsRemaining = 0;
 
   constructor(
@@ -45,8 +45,16 @@ export class Car {
       spinAngle: 0,
     }));
     this.controlState = { wheels: this.initialWheels, grounded: true, boost: 100, boosting: false };
+    // Hard CCD clamps a car against each face of the concave ramp mesh without reducing its
+    // velocity, banking motion until it reaches the planar wall. The car is large enough relative
+    // to its per-tick travel for discrete collision detection to remain reliable at maximum speed.
     this.body = world.createDynamicBody(
-      { position: spawn.position, rotation: spawn.rotation, linearDamping: 0.08, angularDamping: 0.5, ccd: true },
+      {
+        position: spawn.position,
+        rotation: spawn.rotation,
+        linearDamping: 0.08,
+        angularDamping: 0.5,
+      },
       [
         {
           shape: { type: 'roundConvexHull', points: tuning.colliderPoints, borderRadius: tuning.colliderBorderRadius },
@@ -57,20 +65,22 @@ export class Car {
           restitution: 0,
           restitutionCombineRule: 'min',
         },
-        ...[
-          { x: -0.16, y: -0.2, z: -0.24 },
-          { x: 0.16, y: -0.2, z: -0.24 },
-          { x: -0.16, y: -0.2, z: 0.24 },
-          { x: 0.16, y: -0.2, z: 0.24 },
-        ].map((localPosition) => ({
-          shape: { type: 'ball' as const, radius: tuning.wheelRadius },
-          localPosition,
+        {
+          // A single rounded pad avoids competing wheel contacts on curved arena seams.
+          // Four-wheel tilt stabilization in CarController prevents it becoming a
+          // rocking pivot after a flat landing.
+          shape: {
+            type: 'roundBox',
+            halfExtents: { x: 0.16, y: 0.01, z: 0.24 },
+            borderRadius: tuning.wheelRadius - 0.01,
+          },
+          localPosition: { x: 0, y: WHEEL_MOUNT_Y, z: 0 },
           mass: 0,
           friction: 0,
-          frictionCombineRule: 'min' as const,
+          frictionCombineRule: 'min',
           restitution: 0,
-          restitutionCombineRule: 'min' as const,
-        })),
+          restitutionCombineRule: 'min',
+        },
       ],
     );
   }
@@ -106,13 +116,25 @@ export class Car {
   }
 
   state(): CarState {
-    return {
+    const state: CarState = {
       transform: { position: this.body.position(), rotation: this.body.rotation() },
       linearVelocity: this.body.linearVelocity(),
       angularVelocity: this.body.angularVelocity(),
-      ...this.controlState,
+      wheels: this.controlState.wheels,
+      grounded: this.controlState.grounded,
+      boost: this.controlState.boost,
+      boosting: this.controlState.boosting,
+      surfaceNormal: this.controlState.surfaceDebug?.surfaceNormal ?? null,
     };
+    const surfaceDebug = this.controlState.surfaceDebug;
+    return surfaceDebug
+      && typeof window !== 'undefined'
+      && new URLSearchParams(window.location.search).get('vehicleDebug') === '1'
+      ? { ...state, surfaceDebug }
+      : state;
   }
+
+  surfaceDebugState(): CarSurfaceDebug | undefined { return this.controlState.surfaceDebug; }
 
   collectBoost(amount: number): number {
     const collected = this.controller.addBoost(amount);
